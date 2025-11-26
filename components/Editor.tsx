@@ -33,6 +33,9 @@ interface FrameData {
   id: string | number;
   script: string;
   sound: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  audioUrl?: string;
 }
 
 interface SequenceData {
@@ -167,7 +170,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     }
   };
 
-  const handleUpdateFrame = (frameId: string | number, field: 'script' | 'sound', value: string) => {
+  const handleUpdateFrame = (frameId: string | number, field: keyof FrameData, value: string) => {
     setSequences(prev => prev.map(seq => ({
       ...seq,
       frames: seq.frames.map(f => f.id === frameId ? { ...f, [field]: value } : f)
@@ -354,7 +357,13 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
           screenDiv.style.alignItems = 'center';
           screenDiv.style.justifyContent = 'center';
           screenDiv.style.color = '#94a3b8';
-          screenDiv.innerHTML = `<span style="font-weight: bold; font-size: 1.5rem;"># ${startIdx + idx + 1}</span>`;
+          screenDiv.style.position = 'relative';
+          
+          if (frame.imageUrl) {
+            screenDiv.innerHTML = `<img src="${frame.imageUrl}" style="width:100%; height:100%; object-fit:cover;" />`;
+          } else {
+             screenDiv.innerHTML = `<span style="font-weight: bold; font-size: 1.5rem;"># ${startIdx + idx + 1}</span>`;
+          }
           
           const contentDiv = document.createElement('div');
           contentDiv.style.padding = '12px';
@@ -457,7 +466,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         </div>
         
         <div className="p-4 border-t border-gray-800 text-xs text-center text-gray-600">
-          v1.1.0 &bull; Sequence Mode
+          v1.2.0 &bull; Multimedia Support
         </div>
       </aside>
 
@@ -544,8 +553,11 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                               index={currentGlobalIndex + index} 
                               script={frame.script}
                               sound={frame.sound}
+                              imageUrl={frame.imageUrl}
+                              videoUrl={frame.videoUrl}
+                              audioUrl={frame.audioUrl}
                               aspectRatio={aspectRatio}
-                              onUpdate={(field, value) => handleUpdateFrame(frame.id, field, value)}
+                              onUpdate={(field, value) => handleUpdateFrame(frame.id, field as keyof FrameData, value)}
                               onDelete={() => handleDeleteFrame(frame.id)}
                             />
                           ))}
@@ -613,18 +625,37 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             <button onClick={nextSlide} disabled={currentSlideIndex === allFrames.length - 1} className="absolute right-4 md:right-8 p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"><ChevronRight size={32} /></button>
             <div className="w-full max-w-5xl flex flex-col items-center gap-8">
                <div className="w-full bg-slate-800 rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 relative overflow-hidden" style={{ aspectRatio: aspectRatio.replace(':', '/'), maxHeight: '60vh' }}>
-                  <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur rounded text-sm font-mono text-white/70">Shot #{currentSlideIndex + 1}</div>
-                  <MonitorPlay className="w-24 h-24 text-slate-700 opacity-50" />
+                  <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur rounded text-sm font-mono text-white/70 z-10">Shot #{currentSlideIndex + 1}</div>
+                  
+                  {allFrames[currentSlideIndex].videoUrl ? (
+                    <video 
+                      src={allFrames[currentSlideIndex].videoUrl} 
+                      controls 
+                      autoPlay 
+                      className="w-full h-full object-contain"
+                    />
+                  ) : allFrames[currentSlideIndex].imageUrl ? (
+                    <img 
+                      src={allFrames[currentSlideIndex].imageUrl} 
+                      className="w-full h-full object-contain" 
+                      alt={`Shot ${currentSlideIndex + 1}`}
+                    />
+                  ) : (
+                    <MonitorPlay className="w-24 h-24 text-slate-700 opacity-50" />
+                  )}
                </div>
                <div className="w-full max-w-2xl text-center space-y-4">
                   <div>
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Script / Action</h4>
                     <p className="text-xl md:text-2xl font-light text-white">{allFrames[currentSlideIndex].script || <span className="text-gray-600 italic">No script provided...</span>}</p>
                   </div>
-                  {allFrames[currentSlideIndex].sound && (
+                  {(allFrames[currentSlideIndex].sound || allFrames[currentSlideIndex].audioUrl) && (
                     <div className="pt-4 border-t border-white/10">
                       <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-1">Sound Cue</h4>
-                      <p className="text-lg text-gray-300">♫ {allFrames[currentSlideIndex].sound}</p>
+                      {allFrames[currentSlideIndex].sound && <p className="text-lg text-gray-300 mb-2">♫ {allFrames[currentSlideIndex].sound}</p>}
+                      {allFrames[currentSlideIndex].audioUrl && (
+                        <audio controls src={allFrames[currentSlideIndex].audioUrl} className="mx-auto mt-2 h-8" />
+                      )}
                     </div>
                   )}
                </div>
