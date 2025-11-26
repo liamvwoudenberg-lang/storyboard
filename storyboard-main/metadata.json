@@ -1,0 +1,5 @@
+{
+  "name": "CinemaPlaceholder",
+  "description": "A responsive grid layout demonstrating 16:9 movie screen placeholder cards using Tailwind CSS.",
+  "requestFramePermissions": []
+}
