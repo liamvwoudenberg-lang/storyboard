@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Header from './Header';
 import MovieCard from './MovieCard';
-import { Plus, Save, Loader2, FileDown, Settings, ChevronLeft, ChevronRight, X, MonitorPlay } from 'lucide-react';
+import { Plus, Save, Loader2, FileDown, Settings, X, MonitorPlay, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 import { User } from 'firebase/auth';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -13,7 +13,12 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  DragOverlay,
+  DragStartEvent,
+  DragOverEvent,
   DragEndEvent,
+  defaultDropAnimationSideEffects,
+  DropAnimation,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -25,9 +30,15 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 interface FrameData {
-  id: number;
+  id: string | number;
   script: string;
   sound: string;
+}
+
+interface SequenceData {
+  id: string;
+  title: string;
+  frames: FrameData[];
 }
 
 interface EditorProps {
@@ -46,18 +57,25 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
   const [projectTitle, setProjectTitle] = useState("Untitled Storyboard");
   const [aspectRatio, setAspectRatio] = useState("16:9");
 
+  // Sequences State (New Data Structure)
+  const [sequences, setSequences] = useState<SequenceData[]>([
+    {
+      id: 'seq_1',
+      title: 'Scene 1',
+      frames: [
+        { id: 'frame_1', script: '', sound: '' },
+        { id: 'frame_2', script: '', sound: '' },
+        { id: 'frame_3', script: '', sound: '' }
+      ]
+    }
+  ]);
+  
+  // Drag State
+  const [activeId, setActiveId] = useState<string | number | null>(null);
+
   // Presentation State
   const [isPresenting, setIsPresenting] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
-
-  // Initialize with default placeholder frames
-  const [frames, setFrames] = useState<FrameData[]>(
-    Array.from({ length: 6 }, (_, i) => ({
-      id: i + 1,
-      script: '',
-      sound: ''
-    }))
-  );
 
   const { saveProject, loadProject, isSaving, isLoading } = useFirestore();
 
@@ -68,23 +86,21 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     })
   );
 
-  // Load project when component mounts or projectId changes
+  // Flatten sequences for presentation and PDF export
+  const allFrames = useMemo(() => {
+    return sequences.flatMap(seq => seq.frames);
+  }, [sequences]);
+
+  // Load project
   useEffect(() => {
     const initProject = async () => {
       if (user && projectId) {
         try {
-          // Use the URL param projectId to load specific project data
-          const loadedFrames = await loadProject(projectId);
-          if (loadedFrames && loadedFrames.length > 0) {
-            setFrames(loadedFrames);
-            // In a real app, we would also load the title and aspect ratio here
-          } else {
-            // New project or empty
-             setFrames(Array.from({ length: 6 }, (_, i) => ({
-              id: i + 1,
-              script: '',
-              sound: ''
-            })));
+          const loadedData = await loadProject(projectId);
+          if (loadedData) {
+            setSequences(loadedData.sequences);
+            setProjectTitle(loadedData.projectTitle || "Untitled Storyboard");
+            setAspectRatio(loadedData.aspectRatio || "16:9");
           }
         } catch (error) {
           console.error("Initialization error:", error);
@@ -94,92 +110,197 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     initProject();
   }, [user, projectId, loadProject]);
 
-  // Handle Keyboard Navigation for Presentation Mode
+  // Handle Keyboard for Presentation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPresenting) return;
-      
-      if (e.key === 'ArrowRight' || e.key === ' ') {
-        nextSlide();
-      } else if (e.key === 'ArrowLeft') {
-        prevSlide();
-      } else if (e.key === 'Escape') {
-        setIsPresenting(false);
-      }
+      if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
+      else if (e.key === 'ArrowLeft') prevSlide();
+      else if (e.key === 'Escape') setIsPresenting(false);
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPresenting, currentSlideIndex, frames.length]);
+  }, [isPresenting, currentSlideIndex, allFrames.length]);
 
-  const handleAddFrame = () => {
-    setFrames((prev) => [
+  // --- Actions ---
+
+  const handleAddScene = () => {
+    setSequences(prev => [
       ...prev,
       {
-        id: prev.length > 0 ? Math.max(...prev.map((f) => f.id)) + 1 : 1,
-        script: '',
-        sound: ''
-      },
+        id: `seq_${Date.now()}`,
+        title: `Scene ${prev.length + 1}`,
+        frames: []
+      }
     ]);
   };
 
-  const handleDeleteFrame = (id: number) => {
+  const handleAddFrame = (sequenceId: string) => {
+    setSequences(prev => prev.map(seq => {
+      if (seq.id !== sequenceId) return seq;
+      return {
+        ...seq,
+        frames: [
+          ...seq.frames,
+          {
+            id: `frame_${Date.now()}`,
+            script: '',
+            sound: ''
+          }
+        ]
+      };
+    }));
+  };
+
+  const handleDeleteFrame = (frameId: string | number) => {
     if (window.confirm('Are you sure you want to delete this frame?')) {
-      setFrames((prev) => prev.filter((f) => f.id !== id));
-      
-      // Safety check if we deleted the current slide being presented
+      setSequences(prev => prev.map(seq => ({
+        ...seq,
+        frames: seq.frames.filter(f => f.id !== frameId)
+      })));
+
+      // Safety check for presentation mode
       if (isPresenting) {
-        if (frames.length <= 1) {
-           setIsPresenting(false);
-        } else if (currentSlideIndex >= frames.length - 1) {
-           setCurrentSlideIndex(Math.max(0, frames.length - 2));
-        }
+        if (allFrames.length <= 1) setIsPresenting(false);
+        else if (currentSlideIndex >= allFrames.length - 1) setCurrentSlideIndex(Math.max(0, allFrames.length - 2));
       }
     }
   };
 
-  const handleUpdateFrame = (id: number, field: 'script' | 'sound', value: string) => {
-    setFrames((prev) =>
-      prev.map((frame) =>
-        frame.id === id ? { ...frame, [field]: value } : frame
-      )
-    );
+  const handleUpdateFrame = (frameId: string | number, field: 'script' | 'sound', value: string) => {
+    setSequences(prev => prev.map(seq => ({
+      ...seq,
+      frames: seq.frames.map(f => f.id === frameId ? { ...f, [field]: value } : f)
+    })));
+  };
+
+  const handleUpdateSceneTitle = (sequenceId: string, newTitle: string) => {
+    setSequences(prev => prev.map(seq => 
+      seq.id === sequenceId ? { ...seq, title: newTitle } : seq
+    ));
   };
 
   const handleSave = async () => {
     if (user && projectId) {
-      await saveProject(projectId, frames);
+      const projectData = {
+        sequences,
+        title: projectTitle,
+        aspectRatio
+      };
+      await saveProject(projectId, projectData, user.uid);
     }
+  };
+
+  // --- Drag & Drop Logic ---
+
+  const findContainer = (id: string | number) => {
+    if (sequences.find(seq => seq.id === id)) return id;
+    return sequences.find(seq => seq.frames.find(f => f.id === id))?.id;
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    const overId = over?.id;
+
+    if (!overId || active.id === overId) return;
+
+    const activeContainer = findContainer(active.id);
+    const overContainer = findContainer(overId);
+
+    if (!activeContainer || !overContainer || activeContainer === overContainer) {
+      return;
+    }
+
+    // Moving items between containers
+    setSequences((prev) => {
+      const activeSeqIndex = prev.findIndex(s => s.id === activeContainer);
+      const overSeqIndex = prev.findIndex(s => s.id === overContainer);
+      
+      if (activeSeqIndex === -1 || overSeqIndex === -1) return prev;
+
+      const activeItems = [...prev[activeSeqIndex].frames];
+      const overItems = [...prev[overSeqIndex].frames];
+      
+      const activeIndex = activeItems.findIndex(f => f.id === active.id);
+      const overIndex = overItems.findIndex(f => f.id === overId);
+
+      let newIndex;
+      if (overIndex === -1) {
+        newIndex = overItems.length + 1;
+      } else {
+        const isBelowOverItem =
+          over &&
+          active.rect.current.translated &&
+          active.rect.current.translated.top > over.rect.top + over.rect.height;
+
+        const modifier = isBelowOverItem ? 1 : 0;
+        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+      }
+
+      const [movedItem] = activeItems.splice(activeIndex, 1);
+      overItems.splice(newIndex, 0, movedItem);
+
+      const newSequences = [...prev];
+      newSequences[activeSeqIndex] = { ...newSequences[activeSeqIndex], frames: activeItems };
+      newSequences[overSeqIndex] = { ...newSequences[overSeqIndex], frames: overItems };
+
+      return newSequences;
+    });
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const activeContainer = findContainer(active.id);
+    const overContainer = findContainer(over?.id || '');
 
-    if (over && active.id !== over.id) {
-      setFrames((items) => {
-        const oldIndex = items.findIndex((item) => item.id === active.id);
-        const newIndex = items.findIndex((item) => item.id === over.id);
+    if (
+      activeContainer &&
+      overContainer &&
+      activeContainer === overContainer
+    ) {
+      const activeIndex = sequences.find(s => s.id === activeContainer)?.frames.findIndex(f => f.id === active.id);
+      const overIndex = sequences.find(s => s.id === overContainer)?.frames.findIndex(f => f.id === over?.id);
 
-        return arrayMove(items, oldIndex, newIndex);
-      });
+      if (activeIndex !== undefined && overIndex !== undefined && activeIndex !== overIndex) {
+        setSequences((prev) => prev.map(seq => {
+          if (seq.id === activeContainer) {
+            return {
+              ...seq,
+              frames: arrayMove(seq.frames, activeIndex, overIndex)
+            };
+          }
+          return seq;
+        }));
+      }
     }
+
+    setActiveId(null);
   };
 
-  // Presentation Logic
+  const dropAnimation: DropAnimation = {
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: '0.5',
+        },
+      },
+    }),
+  };
+
+  // --- Presentation ---
   const startPresentation = () => {
-    if (frames.length === 0) return;
+    if (allFrames.length === 0) return;
     setCurrentSlideIndex(0);
     setIsPresenting(true);
   };
+  const nextSlide = () => setCurrentSlideIndex(p => (p < allFrames.length - 1 ? p + 1 : p));
+  const prevSlide = () => setCurrentSlideIndex(p => (p > 0 ? p - 1 : p));
 
-  const nextSlide = () => {
-    setCurrentSlideIndex(prev => (prev < frames.length - 1 ? prev + 1 : prev));
-  };
-
-  const prevSlide = () => {
-    setCurrentSlideIndex(prev => (prev > 0 ? prev - 1 : prev));
-  };
-
+  // --- PDF Export ---
   const handleExportPDF = async () => {
     setIsExporting(true);
     try {
@@ -188,13 +309,12 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
       const pageHeight = doc.internal.pageSize.getHeight();
       
       const itemsPerPage = 12;
-      const totalPages = Math.ceil(frames.length / itemsPerPage);
+      const totalPages = Math.ceil(allFrames.length / itemsPerPage);
 
       for (let i = 0; i < totalPages; i++) {
         if (i > 0) doc.addPage();
-
         const startIdx = i * itemsPerPage;
-        const pageFrames = frames.slice(startIdx, startIdx + itemsPerPage);
+        const pageFrames = allFrames.slice(startIdx, startIdx + itemsPerPage);
 
         const tempContainer = document.createElement('div');
         tempContainer.style.width = '1200px'; 
@@ -208,7 +328,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         tempContainer.style.top = '0';
         tempContainer.style.fontFamily = 'sans-serif';
 
-        // Add Header to PDF
+        // Add Header
         const headerEl = document.createElement('div');
         headerEl.style.gridColumn = '1 / -1';
         headerEl.style.marginBottom = '20px';
@@ -222,18 +342,12 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
           const frameEl = document.createElement('div');
           frameEl.style.display = 'flex';
           frameEl.style.flexDirection = 'column';
-          frameEl.style.breakInside = 'avoid';
           frameEl.style.border = '1px solid #e2e8f0';
           frameEl.style.borderRadius = '8px';
           frameEl.style.overflow = 'hidden';
 
           const screenDiv = document.createElement('div');
-          // Use current aspect ratio setting for export
-          let ar = '16/9';
-          if(aspectRatio === '4:3') ar = '4/3';
-          if(aspectRatio === '1:1') ar = '1/1';
-          if(aspectRatio === '9:16') ar = '9/16';
-
+          let ar = aspectRatio === '4:3' ? '4/3' : aspectRatio === '1:1' ? '1/1' : aspectRatio === '9:16' ? '9/16' : '16/9';
           screenDiv.style.aspectRatio = ar;
           screenDiv.style.backgroundColor = '#1e293b'; 
           screenDiv.style.display = 'flex';
@@ -248,15 +362,10 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
           contentDiv.style.backgroundColor = '#f8fafc';
 
           const scriptP = document.createElement('div');
-          scriptP.style.fontSize = '12px';
-          scriptP.style.marginBottom = '8px';
-          scriptP.style.color = '#334155';
-          scriptP.innerHTML = `<strong style="display:block; font-size:10px; color:#64748b; text-transform:uppercase; margin-bottom:2px;">Script</strong> ${frame.script || '—'}`;
-
+          scriptP.innerHTML = `<strong style="display:block; font-size:10px; color:#64748b; text-transform:uppercase; margin-bottom:2px;">Script</strong> <span style="font-size:12px; color:#334155;">${frame.script || '—'}</span>`;
           const soundP = document.createElement('div');
-          soundP.style.fontSize = '12px';
-          soundP.style.color = '#334155';
-          soundP.innerHTML = `<strong style="display:block; font-size:10px; color:#64748b; text-transform:uppercase; margin-bottom:2px;">Sound</strong> ${frame.sound || '—'}`;
+          soundP.style.marginTop = '8px';
+          soundP.innerHTML = `<strong style="display:block; font-size:10px; color:#64748b; text-transform:uppercase; margin-bottom:2px;">Sound</strong> <span style="font-size:12px; color:#334155;">${frame.sound || '—'}</span>`;
 
           contentDiv.appendChild(scriptP);
           contentDiv.appendChild(soundP);
@@ -266,12 +375,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         });
 
         document.body.appendChild(tempContainer);
-
-        const canvas = await html2canvas(tempContainer, {
-          scale: 2, 
-          useCORS: true
-        });
-
+        const canvas = await html2canvas(tempContainer, { scale: 2, useCORS: true });
         const imgData = canvas.toDataURL('image/jpeg', 0.9);
         const imgProps = doc.getImageProperties(imgData);
         const pdfImgHeight = (imgProps.height * pageWidth) / imgProps.width;
@@ -281,7 +385,6 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
       }
 
       doc.save(`${projectTitle.replace(/\s+/g, '_').toLowerCase()}.pdf`);
-
     } catch (err) {
       console.error("PDF Export failed", err);
       alert("Failed to export PDF");
@@ -289,6 +392,9 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
       setIsExporting(false);
     }
   };
+
+  // Calculate running indices for global frame numbering
+  let globalFrameCount = 0;
 
   return (
     <div className="h-screen bg-slate-950 text-slate-100 flex overflow-hidden font-sans">
@@ -305,7 +411,6 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         </div>
         
         <div className="p-6 space-y-8 flex-1 overflow-y-auto">
-          {/* Project Title Input */}
           <div className="space-y-3">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Title</label>
             <input 
@@ -316,7 +421,6 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             />
           </div>
 
-          {/* Aspect Ratio Selector */}
           <div className="space-y-3">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Aspect Ratio</label>
             <div className="grid grid-cols-2 gap-3">
@@ -331,10 +435,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                   }`}
                 >
                   <div className={`border-2 rounded-sm mb-2 ${aspectRatio === ratio ? 'border-indigo-400' : 'border-gray-500'}`} 
-                    style={{ 
-                      width: '24px', 
-                      aspectRatio: ratio.replace(':', '/') 
-                    }} 
+                    style={{ width: '24px', aspectRatio: ratio.replace(':', '/') }} 
                   />
                   <span className="text-xs font-medium">{ratio}</span>
                 </button>
@@ -342,22 +443,21 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             </div>
           </div>
 
-          {/* Stats */}
           <div className="p-4 bg-slate-800/30 rounded-xl border border-slate-800">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Project Stats</h3>
             <div className="flex justify-between items-center text-sm mb-2">
               <span className="text-gray-400">Total Frames</span>
-              <span className="font-mono text-white">{frames.length}</span>
+              <span className="font-mono text-white">{allFrames.length}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-400">Est. Duration</span>
-              <span className="font-mono text-white">~{frames.length * 5}s</span>
+              <span className="text-gray-400">Total Scenes</span>
+              <span className="font-mono text-white">{sequences.length}</span>
             </div>
           </div>
         </div>
-
+        
         <div className="p-4 border-t border-gray-800 text-xs text-center text-gray-600">
-          v1.0.2 &bull; Enterprise Plan
+          v1.1.0 &bull; Sequence Mode
         </div>
       </aside>
 
@@ -400,129 +500,131 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     {isSaving ? 'Saving...' : 'Save'}
                   </button>
-
-                  <button 
-                    onClick={handleAddFrame}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all shadow-lg shadow-indigo-600/20 active:scale-95 text-sm font-medium"
-                  >
-                    <Plus className="w-4 h-4" />
-                    New Frame
-                  </button>
                 </div>
             </div>
 
-            {/* Grid */}
+            {/* Drag & Drop Context */}
             <DndContext 
               sensors={sensors} 
-              collisionDetection={closestCenter} 
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
             >
-              <SortableContext 
-                items={frames.map(f => f.id)} 
-                strategy={rectSortingStrategy}
-              >
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
-                  {frames.map((frame, index) => (
-                    <MovieCard 
-                      key={frame.id}
-                      id={frame.id}
-                      index={index} 
-                      script={frame.script}
-                      sound={frame.sound}
-                      aspectRatio={aspectRatio}
-                      onUpdate={(field, value) => handleUpdateFrame(frame.id, field, value)}
-                      onDelete={() => handleDeleteFrame(frame.id)}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
+              <div className="space-y-12">
+                {sequences.map((sequence) => {
+                  const currentGlobalIndex = globalFrameCount;
+                  globalFrameCount += sequence.frames.length;
+                  
+                  return (
+                    <div key={sequence.id} className="space-y-4">
+                      {/* Sequence Header */}
+                      <div className="flex items-center gap-3 border-b border-gray-800 pb-2">
+                        <Layers className="w-5 h-5 text-indigo-500" />
+                        <input
+                          type="text"
+                          value={sequence.title}
+                          onChange={(e) => handleUpdateSceneTitle(sequence.id, e.target.value)}
+                          className="bg-transparent text-xl font-bold text-slate-200 focus:outline-none focus:text-white placeholder-gray-600"
+                          placeholder="Scene Name"
+                        />
+                      </div>
+
+                      {/* Sortable Area for this Sequence */}
+                      <SortableContext 
+                        id={sequence.id}
+                        items={sequence.frames.map(f => f.id)} 
+                        strategy={rectSortingStrategy}
+                      >
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8 min-h-[100px] p-2 rounded-xl transition-colors">
+                          {sequence.frames.map((frame, index) => (
+                            <MovieCard 
+                              key={frame.id}
+                              id={frame.id}
+                              index={currentGlobalIndex + index} 
+                              script={frame.script}
+                              sound={frame.sound}
+                              aspectRatio={aspectRatio}
+                              onUpdate={(field, value) => handleUpdateFrame(frame.id, field, value)}
+                              onDelete={() => handleDeleteFrame(frame.id)}
+                            />
+                          ))}
+                          {/* Empty Drop Zone Hint if empty */}
+                          {sequence.frames.length === 0 && (
+                            <div className="col-span-full h-32 flex flex-col items-center justify-center border-2 border-dashed border-gray-800 rounded-xl bg-slate-900/30 text-gray-500 text-sm">
+                              Drag frames here
+                            </div>
+                          )}
+                        </div>
+                      </SortableContext>
+
+                      {/* Add Frame to this Scene */}
+                      <button 
+                         onClick={() => handleAddFrame(sequence.id)}
+                         className="flex items-center gap-2 px-3 py-2 text-sm text-indigo-400 hover:text-indigo-300 hover:bg-indigo-900/20 rounded-lg transition-colors"
+                      >
+                         <Plus size={16} /> Add Frame to {sequence.title}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <DragOverlay dropAnimation={dropAnimation}>
+                {activeId ? (
+                   <div className="w-[300px] opacity-80">
+                      {/* Placeholder for dragging - simplified view */}
+                      <div className="bg-slate-800 rounded-xl p-4 border border-indigo-500 shadow-2xl">
+                        <div className="aspect-video bg-black/50 rounded-lg mb-2"></div>
+                        <div className="h-4 bg-gray-700 rounded w-3/4"></div>
+                      </div>
+                   </div>
+                ) : null}
+              </DragOverlay>
             </DndContext>
-            
-            {/* Empty State Helper */}
-            {frames.length === 0 && (
-               <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl">
-                 <p className="text-gray-500 mb-4">No frames yet.</p>
-                 <button 
-                    onClick={handleAddFrame}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-medium"
-                 >
-                    <Plus className="w-4 h-4" /> Create First Frame
-                 </button>
-               </div>
-            )}
+
+            {/* Add New Scene Button */}
+            <div className="mt-16 pb-10 border-t border-gray-800 pt-8 flex justify-center">
+              <button 
+                onClick={handleAddScene}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-900 border border-gray-700 hover:border-gray-500 hover:bg-slate-800 text-white rounded-xl transition-all shadow-lg active:scale-95"
+              >
+                <Layers className="w-5 h-5" />
+                Add New Scene
+              </button>
+            </div>
+
           </div>
         </main>
       </div>
 
       {/* PRESENTATION MODE MODAL */}
-      {isPresenting && frames.length > 0 && (
+      {isPresenting && allFrames.length > 0 && (
         <div className="fixed inset-0 z-50 bg-black text-white flex flex-col">
-          {/* Presentation Header */}
           <div className="flex items-center justify-between px-6 py-4 bg-slate-900/50 backdrop-blur-sm border-b border-white/10 absolute top-0 w-full z-10">
             <h3 className="font-semibold text-lg">{projectTitle}</h3>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400">
-                Slide {currentSlideIndex + 1} / {frames.length}
-              </span>
-              <button 
-                onClick={() => setIsPresenting(false)} 
-                className="p-2 hover:bg-white/10 rounded-full transition-colors"
-              >
-                <X size={24} />
-              </button>
+              <span className="text-sm text-gray-400">Slide {currentSlideIndex + 1} / {allFrames.length}</span>
+              <button onClick={() => setIsPresenting(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={24} /></button>
             </div>
           </div>
-
-          {/* Slide Content */}
           <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
-            
-            {/* Previous Arrow */}
-            <button 
-              onClick={prevSlide}
-              disabled={currentSlideIndex === 0}
-              className="absolute left-4 md:left-8 p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-            >
-              <ChevronLeft size={32} />
-            </button>
-
-            {/* Next Arrow */}
-            <button 
-              onClick={nextSlide}
-              disabled={currentSlideIndex === frames.length - 1}
-              className="absolute right-4 md:right-8 p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-            >
-              <ChevronRight size={32} />
-            </button>
-
-            {/* Screen Placeholder */}
+            <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="absolute left-4 md:left-8 p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"><ChevronLeft size={32} /></button>
+            <button onClick={nextSlide} disabled={currentSlideIndex === allFrames.length - 1} className="absolute right-4 md:right-8 p-4 rounded-full bg-white/5 hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all"><ChevronRight size={32} /></button>
             <div className="w-full max-w-5xl flex flex-col items-center gap-8">
-               <div 
-                 className="w-full bg-slate-800 rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 relative overflow-hidden"
-                 style={{ 
-                   aspectRatio: aspectRatio.replace(':', '/'), 
-                   maxHeight: '60vh'
-                 }}
-               >
-                  <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur rounded text-sm font-mono text-white/70">
-                    Shot #{currentSlideIndex + 1}
-                  </div>
+               <div className="w-full bg-slate-800 rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 relative overflow-hidden" style={{ aspectRatio: aspectRatio.replace(':', '/'), maxHeight: '60vh' }}>
+                  <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur rounded text-sm font-mono text-white/70">Shot #{currentSlideIndex + 1}</div>
                   <MonitorPlay className="w-24 h-24 text-slate-700 opacity-50" />
                </div>
-
-               {/* Script Content */}
                <div className="w-full max-w-2xl text-center space-y-4">
                   <div>
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Script / Action</h4>
-                    <p className="text-xl md:text-2xl font-light text-white">
-                      {frames[currentSlideIndex].script || <span className="text-gray-600 italic">No script provided...</span>}
-                    </p>
+                    <p className="text-xl md:text-2xl font-light text-white">{allFrames[currentSlideIndex].script || <span className="text-gray-600 italic">No script provided...</span>}</p>
                   </div>
-                  {frames[currentSlideIndex].sound && (
+                  {allFrames[currentSlideIndex].sound && (
                     <div className="pt-4 border-t border-white/10">
                       <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-1">Sound Cue</h4>
-                      <p className="text-lg text-gray-300">
-                         ♫ {frames[currentSlideIndex].sound}
-                      </p>
+                      <p className="text-lg text-gray-300">♫ {allFrames[currentSlideIndex].sound}</p>
                     </div>
                   )}
                </div>

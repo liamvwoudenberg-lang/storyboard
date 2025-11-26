@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { 
   User, 
@@ -56,8 +57,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         await setDoc(userRef, {
           uid,
-          email,
-          displayName,
+          email: email || null,
+          displayName: displayName || null,
           createdAt,
           ...additionalData
         }, { merge: true });
@@ -109,7 +110,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const anonymousSignIn = async () => {
     try {
-      await firebaseSignInAnonymously(auth);
+      const result = await firebaseSignInAnonymously(auth);
+      // Ensure anonymous users also have a DB entry if rules require it
+      await createUserDocument(result.user);
     } catch (error) {
       throw error;
     }

@@ -8,12 +8,15 @@ export const useFirestore = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const saveProject = useCallback(async (projectId: string, frames: any[]) => {
+  const saveProject = useCallback(async (projectId: string, projectData: any, userId: string) => {
     setIsSaving(true);
     setError(null);
     try {
+      if (!userId) throw new Error("User ID is required to save project");
+
       const data = {
-        frames: frames,
+        ...projectData, // Spreads { sequences: [...] } or legacy structure
+        userId: userId, // CRITICAL: Required for Firestore Security Rules (resource.data.userId == auth.uid)
         lastUpdated: new Date().toISOString()
       };
       
@@ -39,9 +42,29 @@ export const useFirestore = () => {
       
       if (docSnap.exists()) {
         const data = docSnap.data();
-        return data?.frames || [];
+        
+        // Handle migration: If old data has 'frames' but no 'sequences', wrap it
+        if (data.frames && !data.sequences) {
+          return {
+            sequences: [
+              {
+                id: 'seq_default',
+                title: 'Scene 1',
+                frames: data.frames
+              }
+            ],
+            projectTitle: data.title || "Untitled Project",
+            aspectRatio: data.aspectRatio || "16:9"
+          };
+        }
+        
+        return {
+          sequences: data.sequences || [],
+          projectTitle: data.title || "Untitled Project",
+          aspectRatio: data.aspectRatio || "16:9"
+        };
       } else {
-        console.log("No such document!");
+        console.log("No such document or permission denied!");
         return null;
       }
     } catch (err: any) {

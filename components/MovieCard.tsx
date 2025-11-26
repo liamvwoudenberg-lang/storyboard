@@ -5,7 +5,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 interface MovieCardProps {
-  id: number;
+  id: string | number;
   index: number;
   script: string;
   sound: string;

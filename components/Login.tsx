@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Clapperboard, Loader2, User as UserIcon, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +13,7 @@ const Login: React.FC = () => {
   // Form State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
 
   const handleGoogleSignIn = async () => {
@@ -34,7 +36,11 @@ const Login: React.FC = () => {
       await anonymousSignIn();
     } catch (err: any) {
       console.error("Anonymous login failed:", err);
-      setError("Failed to continue as guest.");
+      if (err.code === 'auth/operation-not-allowed') {
+        setError("Guest login is disabled in Firebase Console.");
+      } else {
+        setError("Failed to continue as guest.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -44,6 +50,13 @@ const Login: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+
+    // Validation
+    if (isSignUp && password !== confirmPassword) {
+      setError("Passwords do not match.");
+      setIsLoading(false);
+      return;
+    }
 
     try {
       if (isSignUp) {
@@ -123,6 +136,20 @@ const Login: React.FC = () => {
             />
           </div>
 
+          {isSignUp && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wider">Confirm Password</label>
+              <input 
+                type="password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                placeholder="••••••••"
+              />
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isLoading}
@@ -136,7 +163,7 @@ const Login: React.FC = () => {
         <div className="text-center mb-6">
           <button 
             type="button"
-            onClick={() => { setError(null); setIsSignUp(!isSignUp); }}
+            onClick={() => { setError(null); setIsSignUp(!isSignUp); setPassword(''); setConfirmPassword(''); }}
             className="text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors"
           >
             {isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up"}
