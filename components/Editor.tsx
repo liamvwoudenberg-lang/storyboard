@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import Header from './Header';
 import MovieCard from './MovieCard';
@@ -122,6 +123,21 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     ]);
   };
 
+  const handleDeleteFrame = (id: number) => {
+    if (window.confirm('Are you sure you want to delete this frame?')) {
+      setFrames((prev) => prev.filter((f) => f.id !== id));
+      
+      // Safety check if we deleted the current slide being presented
+      if (isPresenting) {
+        if (frames.length <= 1) {
+           setIsPresenting(false);
+        } else if (currentSlideIndex >= frames.length - 1) {
+           setCurrentSlideIndex(Math.max(0, frames.length - 2));
+        }
+      }
+    }
+  };
+
   const handleUpdateFrame = (id: number, field: 'script' | 'sound', value: string) => {
     setFrames((prev) =>
       prev.map((frame) =>
@@ -151,6 +167,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
 
   // Presentation Logic
   const startPresentation = () => {
+    if (frames.length === 0) return;
     setCurrentSlideIndex(0);
     setIsPresenting(true);
   };
@@ -414,6 +431,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                       sound={frame.sound}
                       aspectRatio={aspectRatio}
                       onUpdate={(field, value) => handleUpdateFrame(frame.id, field, value)}
+                      onDelete={() => handleDeleteFrame(frame.id)}
                     />
                   ))}
                 </div>
@@ -423,7 +441,13 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             {/* Empty State Helper */}
             {frames.length === 0 && (
                <div className="text-center py-20 border-2 border-dashed border-slate-800 rounded-2xl">
-                 <p className="text-gray-500">No frames yet. Click "New Frame" to start.</p>
+                 <p className="text-gray-500 mb-4">No frames yet.</p>
+                 <button 
+                    onClick={handleAddFrame}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-medium"
+                 >
+                    <Plus className="w-4 h-4" /> Create First Frame
+                 </button>
                </div>
             )}
           </div>
@@ -431,7 +455,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
       </div>
 
       {/* PRESENTATION MODE MODAL */}
-      {isPresenting && (
+      {isPresenting && frames.length > 0 && (
         <div className="fixed inset-0 z-50 bg-black text-white flex flex-col">
           {/* Presentation Header */}
           <div className="flex items-center justify-between px-6 py-4 bg-slate-900/50 backdrop-blur-sm border-b border-white/10 absolute top-0 w-full z-10">
