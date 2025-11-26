@@ -24,6 +24,9 @@
         }
       }
     </script>
+    <script>
+      window.process = window.process || { env: { NODE_ENV: 'development' } };
+    </script>
     <style>
       body {
         font-family: 'Inter', sans-serif;
@@ -34,11 +37,12 @@
   <script type="importmap">
 {
   "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "react": "https://esm.sh/react@18.3.1?dev",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom": "https://esm.sh/react-dom@18.3.1?dev&external=react",
+    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?dev&external=react",
+    "lucide-react": "https://esm.sh/lucide-react@0.344.0?external=react",
     "@dnd-kit/core": "https://esm.sh/@dnd-kit/core@6.1.0?external=react,react-dom",
     "@dnd-kit/sortable": "https://esm.sh/@dnd-kit/sortable@8.0.0?external=react,react-dom,@dnd-kit/core,@dnd-kit/utilities",
     "@dnd-kit/utilities": "https://esm.sh/@dnd-kit/utilities@3.2.2?external=react,react-dom",
@@ -58,5 +62,6 @@
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
