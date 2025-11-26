@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import MovieCard from './components/MovieCard';
-import { Plus, Save, Loader2, DownloadCloud } from 'lucide-react';
+import Login from './components/Login';
+import { Plus, Save, Loader2 } from 'lucide-react';
 import { useFirestore } from './hooks/useFirestore';
 import { auth } from './firebaseConfig';
-import { signInAnonymously } from 'firebase/auth';
+import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import {
   DndContext,
   closestCenter,
@@ -27,9 +28,10 @@ interface FrameData {
   sound: string;
 }
 
-const PROJECT_ID = 'demo-storyboard'; // In a real app, this might come from the URL or user selection
-
 const App: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  
   // Initialize with default placeholder frames
   const [frames, setFrames] = useState<FrameData[]>(
     Array.from({ length: 6 }, (_, i) => ({
@@ -48,23 +50,48 @@ const App: React.FC = () => {
     })
   );
 
-  // Load project on mount after ensuring auth
+  // Monitor Authentication State
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Load project when user is authenticated
   useEffect(() => {
     const initProject = async () => {
-      try {
-        // Ensure user is signed in anonymously to satisfy security rules
-        await signInAnonymously(auth);
-        
-        const loadedFrames = await loadProject(PROJECT_ID);
-        if (loadedFrames && loadedFrames.length > 0) {
-          setFrames(loadedFrames);
+      if (user) {
+        try {
+          // Use user.uid as the project ID to isolate data per user
+          const loadedFrames = await loadProject(user.uid);
+          if (loadedFrames && loadedFrames.length > 0) {
+            setFrames(loadedFrames);
+          } else {
+            // Reset to defaults if new user has no data
+             setFrames(Array.from({ length: 6 }, (_, i) => ({
+              id: i + 1,
+              script: '',
+              sound: ''
+            })));
+          }
+        } catch (error) {
+          console.error("Initialization error:", error);
         }
-      } catch (error) {
-        console.error("Initialization error:", error);
       }
     };
     initProject();
-  }, [loadProject]);
+  }, [user, loadProject]);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      // Optional: Clear frames on sign out or let the next login handle it
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
 
   const handleAddFrame = () => {
     setFrames((prev) => [
@@ -86,7 +113,9 @@ const App: React.FC = () => {
   };
 
   const handleSave = async () => {
-    await saveProject(PROJECT_ID, frames);
+    if (user) {
+      await saveProject(user.uid, frames);
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -102,9 +131,21 @@ const App: React.FC = () => {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <Header />
+      <Header user={user} onSignOut={handleSignOut} />
       
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         
@@ -175,7 +216,7 @@ const App: React.FC = () => {
 
       <footer className="border-t border-gray-800 bg-slate-900 py-8 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center text-gray-500 text-sm">
-          &copy; {new Date().getFullYear()} CinemaGrid App. All placeholders reserved.
+          &copy; {new Date().getFullYear()} CinemaGrid App. All rights reserved.
         </div>
       </footer>
     </div>
