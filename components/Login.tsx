@@ -1,15 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  signInWithPopup, 
-  signInAnonymously, 
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updateProfile
-} from 'firebase/auth';
-import { auth, googleProvider } from '../firebaseConfig';
 import { Clapperboard, Loader2, User as UserIcon, Mail } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
+  const { googleSignIn, emailSignUp, emailSignIn, anonymousSignIn } = useAuth();
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -23,7 +18,7 @@ const Login: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await googleSignIn();
     } catch (err: any) {
       console.error("Login failed:", err);
       setError("Failed to sign in with Google.");
@@ -36,7 +31,7 @@ const Login: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      await signInAnonymously(auth);
+      await anonymousSignIn();
     } catch (err: any) {
       console.error("Anonymous login failed:", err);
       setError("Failed to continue as guest.");
@@ -52,17 +47,9 @@ const Login: React.FC = () => {
 
     try {
       if (isSignUp) {
-        // Create user
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        // Update display name if provided
-        if (displayName) {
-          await updateProfile(userCredential.user, {
-            displayName: displayName
-          });
-        }
+        await emailSignUp(email, password, displayName);
       } else {
-        // Sign in
-        await signInWithEmailAndPassword(auth, email, password);
+        await emailSignIn(email, password);
       }
     } catch (err: any) {
       console.error("Email auth failed:", err);
@@ -70,7 +57,7 @@ const Login: React.FC = () => {
       if (err.code === 'auth/email-already-in-use') msg = "Email already in use.";
       if (err.code === 'auth/invalid-email') msg = "Invalid email address.";
       if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') msg = "Invalid email or password.";
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') msg = "Invalid email or password.";
       setError(msg);
     } finally {
       setIsLoading(false);
