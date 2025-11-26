@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clapperboard, LogOut, Menu, Play } from 'lucide-react';
+import { Clapperboard, LogOut, Menu, Play, ChevronLeft } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -7,6 +7,7 @@ interface HeaderProps {
   onSignOut?: () => void;
   onToggleSidebar: () => void;
   onPresent: () => void;
+  onBackToDashboard: () => void;
   isSidebarOpen: boolean;
 }
 
@@ -15,6 +16,7 @@ const Header: React.FC<HeaderProps> = ({
   onSignOut, 
   onToggleSidebar, 
   onPresent,
+  onBackToDashboard,
   isSidebarOpen
 }) => {
   return (
@@ -30,17 +32,29 @@ const Header: React.FC<HeaderProps> = ({
               <Menu size={20} />
             </button>
             
-            <div className="flex items-center gap-3">
-              <div className="p-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-600/20">
+            <div 
+              className="flex items-center gap-3 cursor-pointer group"
+              onClick={onBackToDashboard}
+              title="Back to Dashboard"
+            >
+              <div className="p-1.5 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-600/20 group-hover:bg-indigo-500 transition-colors">
                 <Clapperboard className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 hidden sm:block">
+              <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 hidden sm:block group-hover:to-white transition-all">
                 CinemaGrid
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4">
+             <button 
+                onClick={onBackToDashboard}
+                className="hidden md:flex items-center gap-1 text-sm text-gray-400 hover:text-white transition-colors mr-2"
+             >
+               <ChevronLeft size={14} />
+               Dashboard
+             </button>
+
              <button
                 onClick={onPresent}
                 className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-600/50 rounded-lg transition-all text-sm font-medium"
