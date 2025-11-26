@@ -3,6 +3,8 @@ import Header from './components/Header';
 import MovieCard from './components/MovieCard';
 import { Plus, Save, Loader2, DownloadCloud } from 'lucide-react';
 import { useFirestore } from './hooks/useFirestore';
+import { auth } from './firebaseConfig';
+import { signInAnonymously } from 'firebase/auth';
 import {
   DndContext,
   closestCenter,
@@ -46,15 +48,22 @@ const App: React.FC = () => {
     })
   );
 
-  // Load project on mount
+  // Load project on mount after ensuring auth
   useEffect(() => {
-    const fetchFrames = async () => {
-      const loadedFrames = await loadProject(PROJECT_ID);
-      if (loadedFrames && loadedFrames.length > 0) {
-        setFrames(loadedFrames);
+    const initProject = async () => {
+      try {
+        // Ensure user is signed in anonymously to satisfy security rules
+        await signInAnonymously(auth);
+        
+        const loadedFrames = await loadProject(PROJECT_ID);
+        if (loadedFrames && loadedFrames.length > 0) {
+          setFrames(loadedFrames);
+        }
+      } catch (error) {
+        console.error("Initialization error:", error);
       }
     };
-    fetchFrames();
+    initProject();
   }, [loadProject]);
 
   const handleAddFrame = () => {
