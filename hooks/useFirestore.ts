@@ -1,4 +1,6 @@
+
 import { useState, useCallback } from 'react';
+import { doc, setDoc, getDoc } from "firebase/firestore"; 
 import { db } from '../firebaseConfig';
 
 export const useFirestore = () => {
@@ -15,8 +17,8 @@ export const useFirestore = () => {
         lastUpdated: new Date().toISOString()
       };
       
-      // Use v8 namespaced syntax
-      await db.collection('projects').doc(projectId).set(data, { merge: true });
+      const projectRef = doc(db, 'projects', projectId);
+      await setDoc(projectRef, data, { merge: true });
       
       return true;
     } catch (err: any) {
@@ -32,11 +34,10 @@ export const useFirestore = () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Use v8 namespaced syntax
-      const docSnap = await db.collection('projects').doc(projectId).get();
+      const projectRef = doc(db, 'projects', projectId);
+      const docSnap = await getDoc(projectRef);
       
-      // In v8, .exists is a property, not a method
-      if (docSnap.exists) {
+      if (docSnap.exists()) {
         const data = docSnap.data();
         return data?.frames || [];
       } else {
