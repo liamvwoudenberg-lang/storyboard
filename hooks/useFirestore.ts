@@ -1,80 +1,86 @@
 
-import { useState, useCallback } from 'react';
-import { doc, setDoc, getDoc } from "firebase/firestore"; 
+import { useState, useEffect, useCallback } from 'react';
 import { db } from '../firebaseConfig';
+import {
+  collection,
+  onSnapshot,
+  query,
+  where,
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp
+} from 'firebase/firestore';
+import { useAuth } from '../context/AuthContext';
 
-export const useFirestore = () => {
+export const useFirestore = (collectionName?: string) => {
+  const [docs, setDocs] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
 
-  const saveProject = useCallback(async (projectId: string, projectData: any, userId: string) => {
-    setIsSaving(true);
-    setError(null);
-    try {
-      if (!userId) throw new Error("User ID is required to save project");
+  // Effect for fetching a collection (for the Dashboard)
+  useEffect(() => {
+    if (collectionName && user) {
+      setIsLoading(true);
+      const q = query(collection(db, collectionName), where("userId", "==", user.uid));
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+        const documents: any[] = [];
+        querySnapshot.forEach((doc) => {
+          documents.push({ id: doc.id, ...doc.data() });
+        });
+        setDocs(documents);
+        setIsLoading(false);
+      }, (error) => {
+        console.error("Error fetching Firestore documents:", error);
+        setIsLoading(false);
+      });
 
-      const data = {
-        ...projectData, // Spreads { sequences: [...] } or legacy structure
-        userId: userId, // CRITICAL: Required for Firestore Security Rules (resource.data.userId == auth.uid)
-        lastUpdated: new Date().toISOString()
-      };
-      
-      const projectRef = doc(db, 'projects', projectId);
-      await setDoc(projectRef, data, { merge: true });
-      
-      return true;
-    } catch (err: any) {
-      console.error("Error saving project:", err);
-      setError(err.message || "Failed to save project");
-      return false;
-    } finally {
-      setIsSaving(false);
+      // Cleanup subscription on unmount
+      return () => unsubscribe();
+    } else {
+      // If no collection name is provided, don't attempt to load a collection.
+      setIsLoading(false);
     }
-  }, []);
+  }, [collectionName, user]);
 
+  // Callback for loading a single document (for the Editor)
   const loadProject = useCallback(async (projectId: string) => {
     setIsLoading(true);
-    setError(null);
     try {
-      const projectRef = doc(db, 'projects', projectId);
-      const docSnap = await getDoc(projectRef);
-      
+      const docRef = doc(db, 'storyboards', projectId);
+      const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const data = docSnap.data();
-        
-        // Handle migration: If old data has 'frames' but no 'sequences', wrap it
-        if (data.frames && !data.sequences) {
-          return {
-            sequences: [
-              {
-                id: 'seq_default',
-                title: 'Scene 1',
-                frames: data.frames
-              }
-            ],
-            projectTitle: data.title || "Untitled Project",
-            aspectRatio: data.aspectRatio || "16:9"
-          };
-        }
-        
-        return {
-          sequences: data.sequences || [],
-          projectTitle: data.title || "Untitled Project",
-          aspectRatio: data.aspectRatio || "16:9"
-        };
+        return docSnap.data();
       } else {
-        console.log("No such document or permission denied!");
+        console.log("No such document!");
         return null;
       }
-    } catch (err: any) {
-      console.error("Error loading project:", err);
-      setError(err.message || "Failed to load project");
-      return null;
+    } catch (error) {
+      console.error("Error loading project:", error);
+      throw error;
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  return { saveProject, loadProject, isSaving, isLoading, error };
+  // Callback for saving a single document (for the Editor)
+  const saveProject = useCallback(async (projectId: string, data: any, userId: string) => {
+    setIsSaving(true);
+    try {
+      const docRef = doc(db, 'storyboards', projectId);
+      await updateDoc(docRef, {
+        ...data,
+        lastEdited: serverTimestamp(),
+        userId: userId,
+      });
+    } catch (error) {
+      console.error("Error saving project:", error);
+      throw error;
+    } finally {
+      setIsSaving(false);
+    }
+  }, []);
+
+  return { docs, isLoading, loadProject, saveProject, isSaving };
 };
