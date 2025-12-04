@@ -28,4 +28,4 @@ jobs:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORYBOARD_E2D08 }}'
           channelId: live
-          projectId: storyboard-e2d08
+          projectId: storybooord-66219543-59944
