@@ -22,7 +22,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onSignOut }) => {
         userId: user.uid,
         createdAt: serverTimestamp(),
         lastEdited: serverTimestamp(),
-        frames: [],
+        sequences: [
+          {
+            id: `seq_${Date.now()}`,
+            title: 'Scene 1',
+            frames: []
+          }
+        ],
+        aspectRatio: '16:9'
       });
       navigate(`/editor/${newProject.id}`);
     } catch (error) {
@@ -132,7 +139,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onSignOut }) => {
                   
                   <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-800/50">
                     <span className="text-xs font-medium text-gray-400 bg-slate-800 px-2 py-1 rounded">
-                      {proj.frames.length} frames
+                      {proj.frames?.length || 0} frames
                     </span>
                     <button className="text-gray-500 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors">
                       <MoreVertical size={14} />

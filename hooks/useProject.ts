@@ -1,34 +1,44 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig'; // Adjust this path if needed
+import { db } from '../firebaseConfig';
+import { useAuth } from '../context/AuthContext';
 
 const useProject = (projectId) => {
+  const { user } = useAuth();
   const [project, setProject] = useState(null);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || !user) return;
 
     const projectRef = doc(db, 'storyboards', projectId);
+    const userId = user.uid;
 
     const unsubscribe = onSnapshot(projectRef, (doc) => {
       setProject(doc.data());
     });
 
     // Presence - Mark user as active
-    const presenceRef = doc(db, 'storyboards', projectId);
-    updateDoc(presenceRef, { 
-      [`activeUsers.${localStorage.getItem('userId')}`]: true
+    updateDoc(projectRef, { 
+      [`activeUsers.${userId}`]: true
     });
 
-    // Mark user as inactive on disconnect
-    window.addEventListener('beforeunload', () => {
-      updateDoc(presenceRef, { 
-        [`activeUsers.${localStorage.getItem('userId')}`]: false
+    const handleBeforeUnload = () => {
+      updateDoc(projectRef, { 
+        [`activeUsers.${userId}`]: false
       });
-    });
+    };
 
-    return () => unsubscribe();
-  }, [projectId]);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      unsubscribe();
+      // Mark user as inactive when component unmounts or user changes
+      updateDoc(projectRef, { 
+        [`activeUsers.${userId}`]: false
+      });
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [projectId, user]);
 
   return project;
 };

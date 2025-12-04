@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Clapperboard, Loader2, User as UserIcon, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
 
 const Login: React.FC = () => {
   const { googleSignIn, emailSignUp, emailSignIn, anonymousSignIn } = useAuth();
@@ -149,6 +150,14 @@ const Login: React.FC = () => {
               />
             </div>
           )}
+
+          <div className="text-right">
+            <Link to="/forgot-password"
+            className="text-indigo-400 hover:text-indigo-300 text-sm font-medium transition-colors"
+          >
+            Forgot Password?
+          </Link>
+          </div>
 
           <button
             type="submit"

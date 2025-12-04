@@ -1,7 +1,7 @@
 {
-  "name": "cinemaplaceholder",
+  "name": "cinemagrid",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -30,7 +30,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
     "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
+    "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.22",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.8.2",
