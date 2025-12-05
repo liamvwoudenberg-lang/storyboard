@@ -85,7 +85,7 @@ const Login: React.FC = () => {
           <div className="p-3 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-600/20 mb-4">
             <Clapperboard className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">CinemaGrid</h1>
+          <h1 className="text-2xl font-bold text-white mb-2">Storybored</h1>
           <p className="text-slate-400">
             {isSignUp ? "Create an account to start storyboarding." : "Sign in to access your projects."}
           </p>

@@ -41,7 +41,7 @@ const Header: React.FC<HeaderProps> = ({
                 <Clapperboard className="w-5 h-5 text-white" />
               </div>
               <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 hidden sm:block group-hover:to-white transition-all">
-                CinemaGrid
+                Storybored
               </h1>
             </div>
           </div>
