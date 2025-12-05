@@ -1,6 +1,7 @@
+
 import React from 'react';
 import { Clapperboard, LogOut, Menu, Play, ChevronLeft, Share2 } from 'lucide-react';
-import { User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 
 interface HeaderProps {
   user?: User | null;

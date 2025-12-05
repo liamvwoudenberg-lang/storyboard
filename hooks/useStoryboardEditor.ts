@@ -6,15 +6,14 @@ import {
   updateDoc, 
   setDoc, 
   collection, 
-  serverTimestamp, 
-  Unsubscribe 
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 // Debounce Helper
 // We put this outside to ensure it doesn't re-create unnecessarily
 const debounce = (func: Function, delay: number) => {
-  let timeout: NodeJS.Timeout;
+  let timeout: ReturnType<typeof setTimeout>;
   return (...args: any[]) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), delay);
@@ -39,7 +38,13 @@ export const useStoryboardEditor = () => {
         roles: { [userId]: 'owner' }, // Matches your Rules
         publicAccess: 'none',
         aspectRatio: '16:9',
-        frames: [], // Array for storyboard frames
+        sequences: [
+          {
+            id: 'seq_1',
+            title: 'Scene 1',
+            frames: []
+          }
+        ], // Initialize with one empty sequence
         createdAt: serverTimestamp(),
         lastEdited: serverTimestamp(),
       };

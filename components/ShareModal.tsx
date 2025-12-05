@@ -26,7 +26,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
   ownerPhotoURL,
   onClose,
 }) => {
-  const { updateDocument, getDocument } = useFirestore('documents');
+  const { updateDocument, getDocument } = useFirestore('storyboards');
   const [accessLevel, setAccessLevel] = useState<'restricted' | 'viewer' | 'editor'>('restricted');
   const [people, setPeople] = useState<UserRole[]>([]);
   const [emailToAdd, setEmailToAdd] = useState('');

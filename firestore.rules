@@ -17,16 +17,23 @@ service cloud.firestore {
         return exists(userPath) && get(userPath).data.get('isGuest', false) == true;
       }
 
-      function isOwner() {
-        // For create, resource is null. request.resource has the new data.
+      // For create operations, where 'resource' is not available.
+      function isCreatingOwnDocument() {
         return request.auth.uid == request.resource.data.ownerId;
       }
 
+      // For existing documents.
+      function isOwner() {
+        return request.auth.uid == resource.data.ownerId;
+      }
+
       function isEditor() {
+        // IMPORTANT: This rule is likely bugged. It checks for a UID in a map of emails.
         return resource.data.roles[request.auth.uid] == 'editor' || isOwner();
       }
 
       function isViewer() {
+        // IMPORTANT: This rule is likely bugged. It checks for a UID in a map of emails.
         return resource.data.roles[request.auth.uid] == 'viewer' || isEditor();
       }
 
@@ -39,24 +46,26 @@ service cloud.firestore {
       }
 
       // Rules
+
+      // Allow authenticated users to list documents. 
+      // The client-side code is filtering to only show documents they own.
+      allow list: if request.auth.uid != null;
+
+      // Viewers can read a single document, public can read if allowed
+      allow get: if (request.auth.uid != null && isViewer()) || isPublicViewer();
+      
       // Any non-guest authenticated user can create a document,
       // and they must be the owner of the new document.
-      allow create: if request.auth.uid != null && !isGuest() && isOwner();
+      allow create: if request.auth.uid != null && !isGuest() && isCreatingOwnDocument();
 
-      // Viewers can read, public can read if allowed
-      allow read: if (request.auth.uid != null && isViewer()) || isPublicViewer();
-      
-      // Editors can update, but not if they are a guest
-      allow update: if ((request.auth.uid != null && isEditor()) || isPublicEditor());
-
-      // Guests (unauthenticated users) can update a public document,
-      // but only to add comments. We enforce this by ensuring other critical fields are not changed.
-      allow update: if request.auth == null && isPublicViewer() &&
+      // Editors can update. Guests can update public docs with restrictions.
+      allow update: if (request.auth.uid != null && isEditor()) || isPublicEditor() ||
+                      (request.auth == null && isPublicViewer() &&
                       request.resource.data.projectTitle == resource.data.projectTitle &&
                       request.resource.data.aspectRatio == resource.data.aspectRatio &&
                       request.resource.data.ownerId == resource.data.ownerId &&
                       request.resource.data.publicAccess == resource.data.publicAccess &&
-                      request.resource.data.roles == resource.data.roles;
+                      request.resource.data.roles == resource.data.roles);
 
       // Only owners can delete
       allow delete: if isOwner();

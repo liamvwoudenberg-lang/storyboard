@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { Plus, Film, Clock, MoreVertical, LogOut, Loader2 } from 'lucide-react';
 import { useStoryboards } from '../hooks/useStoryboards';
 import { useStoryboardEditor } from '../hooks/useStoryboardEditor';

@@ -1,6 +1,7 @@
+
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics, isSupported } from "firebase/analytics";
+import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 // TODO: Add SDKs for Firebase products that you want to use
@@ -25,12 +26,10 @@ const googleProvider = new GoogleAuthProvider();
 
 // Initialize Analytics conditionally
 let analytics;
-isSupported().then((supported) => {
-  if (supported) {
-    analytics = getAnalytics(app);
-  }
-}).catch((err) => {
-  console.warn("Firebase Analytics not supported in this environment", err);
-});
+try {
+  analytics = getAnalytics(app);
+} catch (error) {
+  console.warn("Firebase Analytics not supported in this environment", error);
+}
 
 export { app, analytics, db, auth, googleProvider };
