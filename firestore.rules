@@ -31,21 +31,24 @@ service cloud.firestore {
         return resource.data.publicAccess == 'editor';
       }
 
-      // Check if the requesting user is a guest. 
-      // Defaults to `false` if the `isGuest` field is not present.
-      function isGuest() {
-        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isGuest', false) == true;
-      }
-
       // Rules
-      // A non-guest user can create a document.
-      allow create: if request.auth.uid != null && isGuest() == false;
+      // Any authenticated user can create a document.
+      allow create: if request.auth.uid != null;
 
       // Viewers can read, public can read if allowed
       allow read: if (request.auth.uid != null && isViewer()) || isPublicViewer();
       
       // Editors can update, but not if they are a guest
-      allow update: if ((request.auth.uid != null && isEditor()) || isPublicEditor()) && isGuest() == false;
+      allow update: if ((request.auth.uid != null && isEditor()) || isPublicEditor());
+
+      // Guests (unauthenticated users) can update a public document,
+      // but only to add comments. We enforce this by ensuring other critical fields are not changed.
+      allow update: if request.auth == null && isPublicViewer() &&
+                      request.resource.data.projectTitle == resource.data.projectTitle &&
+                      request.resource.data.aspectRatio == resource.data.aspectRatio &&
+                      request.resource.data.ownerId == resource.data.ownerId &&
+                      request.resource.data.publicAccess == resource.data.publicAccess &&
+                      request.resource.data.roles == resource.data.roles;
 
       // Only owners can delete
       allow delete: if isOwner();

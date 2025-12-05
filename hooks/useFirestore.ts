@@ -65,15 +65,20 @@ export const useFirestore = (collectionName?: string) => {
   }, []);
 
   // Callback for saving a single document (for the Editor)
-  const saveProject = useCallback(async (projectId: string, data: any, userId: string) => {
+  const saveProject = useCallback(async (projectId: string, data: any, userId: string | null) => {
     setIsSaving(true);
     try {
       const docRef = doc(db, 'storyboards', projectId);
-      await updateDoc(docRef, {
+      const dataToUpdate: any = {
         ...data,
         lastEdited: serverTimestamp(),
-        userId: userId,
-      });
+      };
+
+      if (userId) {
+        dataToUpdate.userId = userId;
+      }
+      
+      await updateDoc(docRef, dataToUpdate);
     } catch (error) {
       console.error("Error saving project:", error);
       throw error;

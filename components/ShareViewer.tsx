@@ -38,7 +38,7 @@ const ShareViewer: React.FC = () => {
   const [activeCommentFrameId, setActiveCommentFrameId] = useState<string | number | null>(null);
   const [newComment, setNewComment] = useState("");
 
-  const { loadProject, saveProject } = useFirestore(); // Note: saveProject is needed for saving comments
+  const { loadProject, saveProject } = useFirestore();
 
   // Load project data
   useEffect(() => {
@@ -73,7 +73,6 @@ const ShareViewer: React.FC = () => {
        createdAt: new Date().toISOString()
     };
 
-    // Optimistic Update
     const updatedSequences = sequences.map(seq => ({
        ...seq,
        frames: seq.frames.map(f => {
@@ -86,21 +85,22 @@ const ShareViewer: React.FC = () => {
 
     setSequences(updatedSequences);
     setNewComment("");
+    setActiveCommentFrameId(null);
     
-    // Save to Firestore (We are re-saving the whole project structure for simplicity here, 
-    // ideally comments should be a sub-collection or handled more atomically)
-    // We pass a dummy user ID or handle this in backend rules (allowing guests to write to specific fields)
-    // For this prototype, we'll assume the rules allow it or we use a cloud function.
-    // However, since useFirestore requires a userId for saveProject, and guests don't have one...
-    // We might need to adjust saveProject or use a specific "guest" action.
-    // For now, let's assume read-only for guests means they can't SAVE structure changes, 
-    // but maybe we skip actual persistence of comments in this specific 'client mode' step unless authenticated.
-    // If the requirement implies persistent comments from guests, we'd need an unauthed write path.
-    // Let's implement local state update for the UI at least.
-    
-    // NOTE: Real implementation would need an API endpoint or open Firestore rules for comments collection.
-    // I will skip the actual persistent save here to avoid auth errors, but the UI will update.
-    alert("Comment added (Local Simulation). In production, this would save to backend.");
+    try {
+      const projectDataToSave = {
+        sequences: updatedSequences,
+        // We don't update other fields, preserving the existing data
+        projectTitle,
+        aspectRatio,
+      };
+      // We pass `null` for the userId to indicate a guest comment
+      await saveProject(projectId, projectDataToSave, null);
+    } catch (error) {
+      console.error("Error saving comment:", error);
+      // Optionally, revert the optimistic update here
+      alert("Failed to save comment. Please try again.");
+    }
   };
 
   let globalFrameCount = 0;
