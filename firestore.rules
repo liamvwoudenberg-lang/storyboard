@@ -1,24 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // User Profiles: Users can only read/write their own profile
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // Helper function to check role
+    function hasRole(doc, userId, role) {
+      return userId in doc.data().roles && doc.data().roles[userId] == role;
     }
-    
-    // Storyboards: 
-    // - Allow creation if authenticated
-    // - Allow read/update/delete only if the user is the owner (userId matches)
-    match /storyboards/{storyboardId} {
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      
-      // For updates and deletes, ensure the user owns the existing document
-      allow update: if request.auth != null 
-                    && resource.data.userId == request.auth.uid 
-                    && request.resource.data.userId == request.auth.uid; // Prevent transferring ownership
-                    
-      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+
+    // Helper function to check public access
+    function hasPublicAccess(doc, accessLevel) {
+      return doc.data().publicAccess == accessLevel;
+    }
+
+    match /documents/{documentId} {
+      // Allow read access based on role or public access
+      allow read: if hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'viewer')
+                   || hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'editor')
+                   || hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'owner')
+                   || hasPublicAccess(get(/databases/$(database)/documents/documents/$(documentId)), 'viewer')
+                   || hasPublicAccess(get(/databases/$(database)/documents/documents/$(documentId)), 'editor');
+
+      // Allow update access based on role or public access
+      allow update: if hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'editor')
+                    || hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'owner')
+                    || hasPublicAccess(get(/databases/$(database)/documents/documents/$(documentId)), 'editor');
+
+      // Allow delete only for owner
+      allow delete: if hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'owner');
+
+      // Only owner can manage permissions
+      allow update: if request.auth.uid == resource.data().ownerId
+                    && (request.resource.data().diff(resource.data()).affectedKeys().hasAny(['roles', 'publicAccess']));
     }
   }
 }

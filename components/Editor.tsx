@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Header from './Header';
 import MovieCard from './MovieCard';
-import { Plus, Save, Loader2, FileDown, Settings, X, MonitorPlay, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { Plus, Save, Loader2, FileDown, Settings, X, MonitorPlay, ChevronLeft, ChevronRight, Layers, ZoomIn } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 import { User } from 'firebase/auth';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -36,6 +36,9 @@ interface FrameData {
   imageUrl?: string;
   videoUrl?: string;
   audioUrl?: string;
+  drawingData?: any;
+  shotType?: string;
+  cameraMove?: string;
 }
 
 interface SequenceData {
@@ -170,7 +173,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     }
   };
 
-  const handleUpdateFrame = (frameId: string | number, field: keyof FrameData, value: string) => {
+  const handleUpdateFrame = (frameId: string | number, field: keyof FrameData, value: any) => {
     setSequences(prev => prev.map(seq => ({
       ...seq,
       frames: seq.frames.map(f => f.id === frameId ? { ...f, [field]: value } : f)
@@ -187,7 +190,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     if (user && projectId) {
       const projectData = {
         sequences,
-        title: projectTitle,
+        projectTitle: projectTitle,
         aspectRatio
       };
       await saveProject(projectId, projectData, user.uid);
@@ -338,10 +341,11 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         headerEl.style.color = '#0f172a';
         headerEl.style.borderBottom = '2px solid #e2e8f0';
         headerEl.style.paddingBottom = '10px';
-        headerEl.innerHTML = `<h1 style="margin:0; font-size: 24px;">${projectTitle}</h1><p style="margin:5px 0 0; color:#64748b; font-size:12px;">Generated via CinemaGrid</p>`;
+        headerEl.innerHTML = `<h1 style="margin:0; font-size: 24px;">${projectTitle}</h1><p style="margin:5px 0 0; color:#64748b; font-size:12px;">Generated via Storybored</p>`;
         tempContainer.appendChild(headerEl);
 
-        pageFrames.forEach((frame, idx) => {
+        for (let idx = 0; idx < pageFrames.length; idx++) {
+          const frame = pageFrames[idx];
           const frameEl = document.createElement('div');
           frameEl.style.display = 'flex';
           frameEl.style.flexDirection = 'column';
@@ -375,13 +379,24 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
           const soundP = document.createElement('div');
           soundP.style.marginTop = '8px';
           soundP.innerHTML = `<strong style="display:block; font-size:10px; color:#64748b; text-transform:uppercase; margin-bottom:2px;">Sound</strong> <span style="font-size:12px; color:#334155;">${frame.sound || '—'}</span>`;
+          
+          const metaDiv = document.createElement('div');
+          metaDiv.style.marginTop = '8px';
+          metaDiv.style.display = 'flex';
+          metaDiv.style.gap = '10px';
+          metaDiv.innerHTML = `
+            <div><strong style="display:block; font-size:9px; color:#94a3b8; text-transform:uppercase;">Shot</strong> <span style="font-size:10px; color:#475569;">${frame.shotType || '-'}</span></div>
+            <div><strong style="display:block; font-size:9px; color:#94a3b8; text-transform:uppercase;">Cam</strong> <span style="font-size:10px; color:#475569;">${frame.cameraMove || '-'}</span></div>
+          `;
 
           contentDiv.appendChild(scriptP);
           contentDiv.appendChild(soundP);
+          contentDiv.appendChild(metaDiv);
+
           frameEl.appendChild(screenDiv);
           frameEl.appendChild(contentDiv);
           tempContainer.appendChild(frameEl);
-        });
+        }
 
         document.body.appendChild(tempContainer);
         const canvas = await html2canvas(tempContainer, { scale: 2, useCORS: true });
@@ -421,8 +436,9 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         
         <div className="p-6 space-y-8 flex-1 overflow-y-auto">
           <div className="space-y-3">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Title</label>
+            <label htmlFor="project-title" className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Title</label>
             <input 
+              id="project-title"
               type="text"
               value={projectTitle}
               onChange={(e) => setProjectTitle(e.target.value)}
@@ -487,7 +503,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             {/* Toolbar */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
                 <div>
-                    <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">{projectTitle}</h2>
+                    <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">{projectTitle}</h1>
                     <p className="text-gray-400 text-sm">Last saved: {new Date().toLocaleTimeString()}</p>
                 </div>
                 
@@ -532,6 +548,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                         <Layers className="w-5 h-5 text-indigo-500" />
                         <input
                           type="text"
+                          aria-label={`Title for ${sequence.title}`}
                           value={sequence.title}
                           onChange={(e) => handleUpdateSceneTitle(sequence.id, e.target.value)}
                           className="bg-transparent text-xl font-bold text-slate-200 focus:outline-none focus:text-white placeholder-gray-600"
@@ -557,6 +574,9 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                               videoUrl={frame.videoUrl}
                               audioUrl={frame.audioUrl}
                               aspectRatio={aspectRatio}
+                              drawingData={frame.drawingData}
+                              shotType={frame.shotType}
+                              cameraMove={frame.cameraMove}
                               onUpdate={(field, value) => handleUpdateFrame(frame.id, field as keyof FrameData, value)}
                               onDelete={() => handleDeleteFrame(frame.id)}
                             />
@@ -627,6 +647,12 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                <div className="w-full bg-slate-800 rounded-2xl flex items-center justify-center shadow-2xl border border-white/10 relative overflow-hidden" style={{ aspectRatio: aspectRatio.replace(':', '/'), maxHeight: '60vh' }}>
                   <div className="absolute top-4 left-4 px-3 py-1 bg-black/50 backdrop-blur rounded text-sm font-mono text-white/70 z-10">Shot #{currentSlideIndex + 1}</div>
                   
+                  {allFrames[currentSlideIndex].cameraMove === 'Zoom In' && (
+                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-40 z-20">
+                        <ZoomIn className="w-32 h-32 text-white" strokeWidth={1} />
+                     </div>
+                  )}
+
                   {allFrames[currentSlideIndex].videoUrl ? (
                     <video 
                       src={allFrames[currentSlideIndex].videoUrl} 
@@ -645,6 +671,10 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                   )}
                </div>
                <div className="w-full max-w-2xl text-center space-y-4">
+                  <div className="flex justify-center gap-4 text-xs text-gray-400 font-mono">
+                     {allFrames[currentSlideIndex].shotType && <span className="px-2 py-1 bg-white/5 rounded border border-white/10">{allFrames[currentSlideIndex].shotType}</span>}
+                     {allFrames[currentSlideIndex].cameraMove && <span className="px-2 py-1 bg-white/5 rounded border border-white/10">{allFrames[currentSlideIndex].cameraMove}</span>}
+                  </div>
                   <div>
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">Script / Action</h4>
                     <p className="text-xl md:text-2xl font-light text-white">{allFrames[currentSlideIndex].script || <span className="text-gray-600 italic">No script provided...</span>}</p>

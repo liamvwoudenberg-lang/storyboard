@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Editor from './components/Editor';
+import ShareViewer from './components/ShareViewer';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import NotFound from './components/NotFound';
@@ -22,6 +23,9 @@ const App: React.FC = () => {
 
   return (
     <Routes>
+      {/* Public Share Route - Accessible by anyone */}
+      <Route path="/share/:projectId" element={<ShareViewer />} />
+
       {user ? (
         <>
           <Route path="/" element={<Dashboard user={user} onSignOut={logout} />} />
