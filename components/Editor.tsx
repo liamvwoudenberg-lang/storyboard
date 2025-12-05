@@ -214,6 +214,35 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     navigate('/login'); // Redirect to login
   };
 
+  const handleExportPDF = () => {
+    console.log("Exporting to PDF.");
+    setIsExporting(true);
+    const storyboardElement = document.getElementById('storyboard-preview');
+    
+    if (storyboardElement) {
+        html2canvas(storyboardElement, {
+            useCORS: true,
+            scale: 2, 
+        }).then(canvas => {
+            const pdf = new jsPDF('l', 'px', [canvas.width, canvas.height]);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`${projectTitle.replace(/ /g, '_')}_storyboard.pdf`);
+            setIsExporting(false);
+            alert('Storyboard exported as PDF!');
+        }).catch(err => {
+            console.error("Error exporting to PDF: ", err);
+            setIsExporting(false);
+            alert('Could not export to PDF. Please try again.');
+        });
+    } else {
+        console.error("Could not find storyboard element to export.");
+        setIsExporting(false);
+        alert('Error: Storyboard element not found.');
+    }
+  };
+
 
   // ... (Drag & Drop logic, Presentation, PDF Export remain the same)
 
@@ -231,7 +260,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
       <div className="h-screen bg-slate-950 text-slate-100 flex overflow-hidden font-sans">
         {/* ... (Sidebar and Main Content) ... */}
          <main className="flex-1 overflow-y-auto w-full p-4 sm:p-6 lg:p-10 scroll-smooth">
-          <div className="max-w-7xl mx-auto pb-20">
+          <div id="storyboard-preview" className="max-w-7xl mx-auto pb-20">
             
             {/* Toolbar */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
