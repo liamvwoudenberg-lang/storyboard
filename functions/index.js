@@ -1,62 +1,87 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
 
 admin.initializeApp();
+const app = express();
 
-/**
- * Deletes guest accounts that are older than 24 hours.
- *
- * This function is scheduled to run every 24 hours.
- */
-exports.cleanupGuestAccounts = functions.pubsub
-  .schedule("every 24 hours")
-  .onRun(async (context) => {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const snapshot = await admin.firestore().collection('storyboards').get();
+    let xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+    snapshot.forEach(doc => {
+      const storyboard = doc.data();
+      const url = `https://${req.hostname}/editor/${doc.id}`;
+      const lastMod = storyboard.lastEdited ? new Date(storyboard.lastEdited.seconds * 1000).toISOString() : new Date().toISOString();
+      xml += `<url><loc>${url}</loc><lastmod>${lastMod}</lastmod></url>`;
+    });
+    xml += '</urlset>';
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (error) {
+    console.error("Sitemap generation failed:", error);
+    res.status(500).send("Error generating sitemap.");
+  }
+});
 
-    try {
-      // Get all guest users created more than 24 hours ago
-      const usersSnapshot = await admin
-        .firestore()
-        .collection("users")
-        .where("isGuest", "==", true)
-        .where("createdAt", "<", twentyFourHoursAgo)
-        .get();
+app.get('/*', async (req, res) => {
+  const host = req.hostname;
+  const url = req.path;
 
-      if (usersSnapshot.empty) {
-        console.log("No old guest accounts to delete.");
-        return null;
+  // Default metadata
+  let title = "CinemaGrid - Create & Share Storyboards";
+  let description = "The ultimate tool for filmmakers and content creators to visualize their stories. Create, collaborate, and share your storyboards with ease.";
+  let imageUrl = `https://${host}/og-image.png`; // A default OG image
+  let jsonLd = {};
+
+  // Fetch data for a specific storyboard if the path matches
+  if (url.startsWith('/editor/')) {
+    const storyboardId = url.split('/')[2];
+    if (storyboardId) {
+      try {
+        const doc = await admin.firestore().collection('storyboards').doc(storyboardId).get();
+        if (doc.exists) {
+          const data = doc.data();
+          title = `${data.title} - CinemaGrid`;
+          description = `A storyboard by ${data.author || 'a CinemaGrid user'}`;
+          imageUrl = data.thumbnailUrl || imageUrl; // Use a thumbnail if available
+          jsonLd = {
+            "@context": "http://schema.org",
+            "@type": "CreativeWork",
+            "name": data.title,
+            "author": data.author || "Anonymous",
+            "datePublished": new Date(data.createdAt.seconds * 1000).toISOString(),
+          };
+        }
+      } catch (error) {
+        console.error('Error fetching storyboard:', error);
       }
-
-      const batch = admin.firestore().batch();
-      const userIdsToDelete = [];
-
-      usersSnapshot.forEach((doc) => {
-        const user = doc.data();
-        console.log(`Preparing to delete user: ${user.uid}`);
-        userIdsToDelete.push(user.uid);
-        batch.delete(doc.ref);
-      });
-
-      // Delete the documents from Firestore
-      await batch.commit();
-      console.log(`Successfully deleted ${userIdsToDelete.length} user document(s) from Firestore.`);
-
-      // Delete the users from Firebase Authentication
-      // Auth deletions must be done in series or with managed concurrency to avoid overwhelming the API
-      for (const uid of userIdsToDelete) {
-          try {
-              await admin.auth().deleteUser(uid);
-              console.log(`Successfully deleted user with UID: ${uid} from Auth.`);
-          } catch (error) {
-              console.error(`Error deleting user with UID: ${uid} from Auth:`, error);
-          }
-      }
-
-      return { message: `Cleanup complete. Deleted ${userIdsToDelete.length} guest accounts.` };
-
-    } catch (error) {
-      console.error("Error cleaning up guest accounts:", error);
-      return null;
     }
+  }
+
+  fs.readFile(path.resolve(__dirname, '../dist/index.html'), 'utf8', (err, htmlData) => {
+    if (err) {
+      console.error('Error reading index.html:', err);
+      return res.status(500).send('Error loading page');
+    }
+
+    let finalHtml = htmlData
+      .replace(/__TITLE__/g, title)
+      .replace(/__DESCRIPTION__/g, description)
+      .replace(/__OG_TITLE__/g, title)
+      .replace(/__OG_DESCRIPTION__/g, description)
+      .replace(/__OG_IMAGE__/g, imageUrl);
+
+    if (Object.keys(jsonLd).length > 0) {
+        finalHtml = finalHtml.replace('<script id="json-ld"></script>', `<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`);
+    }
+
+    res.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+    res.status(200).send(finalHtml);
   });
+});
+
+exports.app = functions.https.onRequest(app);

@@ -10,8 +10,16 @@ service cloud.firestore {
 
     match /storyboards/{documentId} {
       // Helper functions
+      function isGuest() {
+        let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+        // Check if the user document exists, and if it does, check the 'isGuest' field.
+        // A non-existent profile means the user is not a guest.
+        return exists(userPath) && get(userPath).data.get('isGuest', false) == true;
+      }
+
       function isOwner() {
-        return request.auth.uid == resource.data.ownerId;
+        // For create, resource is null. request.resource has the new data.
+        return request.auth.uid == request.resource.data.ownerId;
       }
 
       function isEditor() {
@@ -31,8 +39,9 @@ service cloud.firestore {
       }
 
       // Rules
-      // Any authenticated user can create a document.
-      allow create: if request.auth.uid != null;
+      // Any non-guest authenticated user can create a document,
+      // and they must be the owner of the new document.
+      allow create: if request.auth.uid != null && !isGuest() && isOwner();
 
       // Viewers can read, public can read if allowed
       allow read: if (request.auth.uid != null && isViewer()) || isPublicViewer();
