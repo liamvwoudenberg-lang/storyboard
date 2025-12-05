@@ -31,9 +31,10 @@ service cloud.firestore {
         return resource.data.publicAccess == 'editor';
       }
 
-      // Check if the requesting user is a guest by checking the `isGuest` flag on their user document.
+      // Check if the requesting user is a guest. 
+      // Defaults to `false` if the `isGuest` field is not present.
       function isGuest() {
-        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isGuest == true;
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isGuest', false) == true;
       }
 
       // Rules
