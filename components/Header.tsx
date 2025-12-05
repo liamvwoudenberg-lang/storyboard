@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
-import { Clapperboard, LogOut, Menu, Play, ChevronLeft, Share2, Copy, Check } from 'lucide-react';
+import React from 'react';
+import { Clapperboard, LogOut, Menu, Play, ChevronLeft, Share2 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { useParams } from 'react-router-dom';
 
 interface HeaderProps {
   user?: User | null;
@@ -9,6 +8,7 @@ interface HeaderProps {
   onToggleSidebar: () => void;
   onPresent: () => void;
   onBackToDashboard: () => void;
+  onShare: () => void; // New prop to open the share modal
   isSidebarOpen: boolean;
 }
 
@@ -18,20 +18,9 @@ const Header: React.FC<HeaderProps> = ({
   onToggleSidebar, 
   onPresent,
   onBackToDashboard,
+  onShare,
   isSidebarOpen
 }) => {
-  const { projectId } = useParams<{ projectId: string }>();
-  const [showShareTooltip, setShowShareTooltip] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
-
-  const handleCopyLink = () => {
-    if (!projectId) return;
-    const url = `${window.location.origin}/share/${projectId}`;
-    navigator.clipboard.writeText(url);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
   return (
     <header className="sticky top-0 z-40 w-full backdrop-blur-lg bg-slate-900/90 border-b border-gray-800 transition-all duration-300">
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -68,38 +57,14 @@ const Header: React.FC<HeaderProps> = ({
                Dashboard
              </button>
 
-             {/* Share Button (Only visible if projectId is present, i.e., in Editor) */}
-             {projectId && (
-                <div className="relative">
-                   <button
-                      onClick={() => setShowShareTooltip(!showShareTooltip)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-slate-700 rounded-lg transition-all text-sm font-medium"
-                   >
-                     <Share2 size={16} />
-                     <span className="hidden sm:inline">Share</span>
-                   </button>
-                   
-                   {showShareTooltip && (
-                      <div className="absolute top-full mt-2 right-0 w-64 bg-slate-800 border border-slate-700 rounded-xl shadow-xl p-3 z-50 flex flex-col gap-2">
-                         <p className="text-xs text-gray-400">Share this read-only link:</p>
-                         <div className="flex gap-2">
-                            <input 
-                              readOnly 
-                              value={`${window.location.origin}/share/${projectId}`}
-                              className="flex-1 bg-slate-950 text-xs text-gray-300 px-2 py-1 rounded border border-slate-700 focus:outline-none"
-                            />
-                            <button 
-                              onClick={handleCopyLink}
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white p-1.5 rounded transition-colors"
-                              title="Copy Link"
-                            >
-                              {isCopied ? <Check size={14} /> : <Copy size={14} />}
-                            </button>
-                         </div>
-                      </div>
-                   )}
-                </div>
-             )}
+             {/* Share Button (now opens modal) */}
+              <button
+                 onClick={onShare}
+                 className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-all text-sm font-semibold shadow-lg shadow-indigo-600/20"
+              >
+                <Share2 size={16} />
+                <span className="hidden sm:inline">Share</span>
+              </button>
 
              <button
                 onClick={onPresent}
