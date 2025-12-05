@@ -15,6 +15,7 @@ import { auth, googleProvider, db } from '../firebaseConfig';
 
 interface AuthContextType {
   user: User | null;
+  isGuest: boolean;
   loading: boolean;
   googleSignIn: () => Promise<void>;
   emailSignUp: (email: string, pass: string, name: string) => Promise<void>;
@@ -39,11 +40,9 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // ---------------------------------------------------------
-  // 1. Create User Document Logic
-  // ---------------------------------------------------------
   const createUserDocument = async (user: User, additionalData?: any) => {
     if (!user) return;
 
@@ -52,14 +51,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userSnap = await getDoc(userRef);
 
       if (!userSnap.exists()) {
-        const { email, displayName, uid } = user;
+        const { email, displayName, uid, isAnonymous } = user;
         const createdAt = new Date().toISOString();
 
         await setDoc(userRef, {
           uid,
           email: email || null,
-          displayName: displayName || null,
+          displayName: displayName || `Guest-${uid.substring(0,5)}`,
           createdAt,
+          isGuest: isAnonymous,
           ...additionalData
         }, { merge: true });
       }
@@ -68,10 +68,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // ---------------------------------------------------------
-  // 2. Auth Actions
-  // ---------------------------------------------------------
-  
   const googleSignIn = async () => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -84,14 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const emailSignUp = async (email: string, pass: string, name: string) => {
     try {
       const result = await createUserWithEmailAndPassword(auth, email, pass);
-      
-      // Update the Auth Profile
-      if (name) {
-        await updateProfile(result.user, { displayName: name });
-      }
-
-      // Create the Firestore Document
-      // Note: We pass name manually because result.user.displayName might not update immediately in the object
+      await updateProfile(result.user, { displayName: name });
       await createUserDocument(result.user, { displayName: name });
     } catch (error) {
       throw error;
@@ -100,8 +89,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const emailSignIn = async (email: string, pass: string) => {
     try {
-      // Login doesn't usually need to create a doc, but we can check if we want
-      // For now, standard login
       await signInWithEmailAndPassword(auth, email, pass);
     } catch (error) {
       throw error;
@@ -111,7 +98,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const anonymousSignIn = async () => {
     try {
       const result = await firebaseSignInAnonymously(auth);
-      // Ensure anonymous users also have a DB entry if rules require it
       await createUserDocument(result.user);
     } catch (error) {
       throw error;
@@ -126,12 +112,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // ---------------------------------------------------------
-  // 3. Auth Listener
-  // ---------------------------------------------------------
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setIsGuest(currentUser?.isAnonymous || false);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -139,6 +123,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value = {
     user,
+    isGuest,
     loading,
     googleSignIn,
     emailSignUp,

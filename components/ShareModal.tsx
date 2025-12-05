@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
-import { X, Link, Users, Lock, ChevronDown, Check, Globe } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Link, Users, Lock, ChevronDown, Check, Globe, AlertCircle, Trash2 } from 'lucide-react';
+import { useFirestore } from '../hooks/useFirestore'; // Assuming you have this hook
 
 interface ShareModalProps {
   projectTitle: string;
@@ -11,6 +12,12 @@ interface ShareModalProps {
   onClose: () => void;
 }
 
+interface UserRole {
+  email: string;
+  role: 'viewer' | 'editor' | 'owner';
+  // Add other user details if available, like name, photoURL
+}
+
 const ShareModal: React.FC<ShareModalProps> = ({
   projectTitle,
   projectId,
@@ -19,13 +26,76 @@ const ShareModal: React.FC<ShareModalProps> = ({
   ownerPhotoURL,
   onClose,
 }) => {
+  const { updateDocument, getDocument } = useFirestore('documents');
   const [accessLevel, setAccessLevel] = useState<'restricted' | 'viewer' | 'editor'>('restricted');
+  const [people, setPeople] = useState<UserRole[]>([]);
+  const [emailToAdd, setEmailToAdd] = useState('');
+  const [roleToAdd, setRoleToAdd] = useState<'viewer' | 'editor'>('viewer');
   const [isCopied, setIsCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchProjectData = useCallback(async () => {
+    const doc = await getDocument(projectId);
+    if (doc && doc.exists()) {
+      const data = doc.data();
+      setAccessLevel(data.publicAccess || 'restricted');
+      const roles = data.roles || {};
+      const currentPeople = Object.entries(roles).map(([email, role]) => ({
+        email,
+        role: role as 'viewer' | 'editor',
+      }));
+      setPeople(currentPeople);
+    }
+  }, [getDocument, projectId]);
+
+  useEffect(() => {
+    fetchProjectData();
+  }, [fetchProjectData]);
+
+  const handleAddPerson = async () => {
+    if (!emailToAdd || !/\S+@\S+\.\S+/.test(emailToAdd)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (emailToAdd === ownerEmail) {
+      setError('You cannot change the owner\'s role.');
+      return;
+    }
+    if (people.find(p => p.email === emailToAdd)) {
+      setError('This person already has access.');
+      return;
+    }
+
+    setError(null);
+    const newRoles = { ...people.reduce((acc, p) => ({ ...acc, [p.email]: p.role }), {}), [emailToAdd]: roleToAdd };
+    await updateDocument(projectId, { roles: newRoles });
+    setPeople([...people, { email: emailToAdd, role: roleToAdd }]);
+    setEmailToAdd('');
+  };
+
+  const handleRemovePerson = async (emailToRemove: string) => {
+    const newPeople = people.filter(p => p.email !== emailToRemove);
+    const newRoles = newPeople.reduce((acc, p) => ({ ...acc, [p.email]: p.role }), {});
+    await updateDocument(projectId, { roles: newRoles });
+    setPeople(newPeople);
+  };
+
+  const handleRoleChange = async (emailToUpdate: string, newRole: 'viewer' | 'editor') => {
+    const updatedPeople = people.map(p => p.email === emailToUpdate ? { ...p, role: newRole } : p);
+    const newRoles = updatedPeople.reduce((acc, p) => ({ ...acc, [p.email]: p.role }), {});
+    await updateDocument(projectId, { roles: newRoles });
+    setPeople(updatedPeople);
+  };
+
+
+  const handlePublicAccessChange = async (newAccessLevel: 'restricted' | 'viewer' | 'editor') => {
+    setAccessLevel(newAccessLevel);
+    await updateDocument(projectId, { publicAccess: newAccessLevel });
+  };
+
 
   const handleCopyLink = () => {
-    // Note: The 'edit' flag is just a concept for now.
-    // Real-time collaboration for anonymous users would require backend changes (e.g. security rules).
-    const shareUrl = `${window.location.origin}/share/${projectId}${accessLevel === 'editor' ? '?edit=true' : ''}`;
+    const shareUrl = `${window.location.origin}/share/${projectId}`;
     navigator.clipboard.writeText(shareUrl);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2500);
@@ -38,7 +108,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
       case 'viewer':
         return { icon: Globe, text: 'Anyone with the link', description: 'Anyone on the internet with the link can view' };
       case 'editor':
-         return { icon: Globe, text: 'Anyone with the link', description: 'Anyone on the internet with the link can edit' };
+        return { icon: Globe, text: 'Anyone with the link', description: 'Anyone on the internet with the link can edit' };
       default:
         return { icon: Lock, text: 'Restricted', description: 'Only people with access can open with the link' };
     }
@@ -59,34 +129,77 @@ const ShareModal: React.FC<ShareModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          <div className="relative">
+        <div className="p-6 space-y-4">
+          <div className="flex space-x-2">
             <input
-              type="text"
-              placeholder="Add people, groups, and calendar events"
-              className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-4 py-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+              type="email"
+              value={emailToAdd}
+              onChange={(e) => setEmailToAdd(e.target.value)}
+              placeholder="Add people by email"
+              className="flex-grow bg-slate-900 border border-slate-600 rounded-lg pl-4 pr-4 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
             />
-            <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <select 
+              value={roleToAdd}
+              onChange={e => setRoleToAdd(e.target.value as 'viewer' | 'editor')} 
+              className="bg-slate-700 border border-slate-600 rounded-lg py-2 px-3 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+            >
+                <option value="viewer">Viewer</option>
+                <option value="editor">Editor</option>
+            </select>
+            <button onClick={handleAddPerson} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold">
+              Add
+            </button>
           </div>
-
-          <div>
-            <h3 className="text-slate-300 font-semibold mb-3">People with access</h3>
+          {error && 
+            <div className='flex items-center text-red-400 text-sm'>
+              <AlertCircle size={16} className="mr-2"/> 
+              {error}
+            </div>
+          }
+          
+          <div className="space-y-3" style={{maxHeight: '200px', overflowY: 'auto'}}>
+             <h3 className="text-slate-300 font-semibold mb-3">People with access</h3>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {ownerPhotoURL ? (
-                   <img src={ownerPhotoURL} alt={ownerName || 'Owner'} className="w-10 h-10 rounded-full"/>
-                ) : (
-                   <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-white">
-                     {ownerName ? ownerName[0].toUpperCase() : 'U'}
-                   </div>
-                )}
-                <div>
-                  <p className="font-semibold">{ownerName} (you)</p>
-                  <p className="text-xs text-slate-400">{ownerEmail}</p>
+                <div className="flex items-center gap-3">
+                  {ownerPhotoURL ? (
+                     <img src={ownerPhotoURL} alt={ownerName || 'Owner'} className="w-10 h-10 rounded-full"/>
+                  ) : (
+                     <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-bold text-white">
+                       {ownerName ? ownerName[0].toUpperCase() : 'U'}
+                     </div>
+                  )}
+                  <div>
+                    <p className="font-semibold">{ownerName} (you)</p>
+                    <p className="text-xs text-slate-400">{ownerEmail}</p>
+                  </div>
+                </div>
+                <span className="text-sm text-slate-400">Owner</span>
+            </div>
+            {people.map(person => (
+              <div key={person.email} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white">
+                    {person.email[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-semibold">{person.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={person.role} 
+                    onChange={e => handleRoleChange(person.email, e.target.value as 'viewer' | 'editor')}
+                    className="bg-slate-700 border border-slate-600 rounded-lg py-1 px-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  >
+                    <option value="viewer">Viewer</option>
+                    <option value="editor">Editor</option>
+                  </select>
+                  <button onClick={() => handleRemovePerson(person.email)} className="p-2 rounded-full hover:bg-slate-700 transition-colors">
+                      <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
-              <span className="text-sm text-slate-400">Owner</span>
-            </div>
+            ))}
           </div>
 
           <div>
@@ -98,12 +211,12 @@ const ShareModal: React.FC<ShareModalProps> = ({
               <div className="flex-1 relative group">
                 <select 
                   value={accessLevel} 
-                  onChange={(e) => setAccessLevel(e.target.value as any)}
-                  className="w-full appearance-none bg-transparent font-semibold text-white focus:outline-none cursor-pointer"
+                  onChange={(e) => handlePublicAccessChange(e.target.value as any)}
+                  className="w-full appearance-none bg-transparent font-semibold text-white focus:outline-none cursor-pointer pr-8"
                 >
                   <option value="restricted" className="bg-slate-800 text-white">Restricted</option>
                   <option value="viewer" className="bg-slate-800 text-white">Anyone with the link</option>
-                   <option value="editor" className="bg-slate-800 text-white">Anyone with the link can edit</option>
+                  <option value="editor" className="bg-slate-800 text-white">Anyone with link can edit</option>
                 </select>
                 <p className="text-xs text-slate-400 mt-1">{getAccessInfo().description}</p>
                 <ChevronDown size={16} className="absolute top-1 right-0 text-slate-400 pointer-events-none group-hover:text-white" />

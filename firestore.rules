@@ -1,35 +1,53 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check role
-    function hasRole(doc, userId, role) {
-      return userId in doc.data().roles && doc.data().roles[userId] == role;
-    }
 
-    // Helper function to check public access
-    function hasPublicAccess(doc, accessLevel) {
-      return doc.data().publicAccess == accessLevel;
+    // Users can create and manage their own user profile
+    match /users/{userId} {
+      allow read, update: if request.auth.uid == userId;
+      allow create: if request.auth.uid != null;
     }
 
     match /documents/{documentId} {
-      // Allow read access based on role or public access
-      allow read: if hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'viewer')
-                   || hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'editor')
-                   || hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'owner')
-                   || hasPublicAccess(get(/databases/$(database)/documents/documents/$(documentId)), 'viewer')
-                   || hasPublicAccess(get(/databases/$(database)/documents/documents/$(documentId)), 'editor');
+      // Helper functions
+      function isOwner() {
+        return request.auth.uid == resource.data.ownerId;
+      }
 
-      // Allow update access based on role or public access
-      allow update: if hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'editor')
-                    || hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'owner')
-                    || hasPublicAccess(get(/databases/$(database)/documents/documents/$(documentId)), 'editor');
+      function isEditor() {
+        return resource.data.roles[request.auth.uid] == 'editor' || isOwner();
+      }
 
-      // Allow delete only for owner
-      allow delete: if hasRole(get(/databases/$(database)/documents/documents/$(documentId)), request.auth.uid, 'owner');
+      function isViewer() {
+        return resource.data.roles[request.auth.uid] == 'viewer' || isEditor();
+      }
 
-      // Only owner can manage permissions
-      allow update: if request.auth.uid == resource.data().ownerId
-                    && (request.resource.data().diff(resource.data()).affectedKeys().hasAny(['roles', 'publicAccess']));
+      function isPublicViewer() {
+        return resource.data.publicAccess == 'viewer' || isPublicEditor();
+      }
+
+      function isPublicEditor() {
+        return resource.data.publicAccess == 'editor';
+      }
+
+      // Check if the requesting user is a guest by checking the `isGuest` flag on their user document.
+      function isGuest() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isGuest == true;
+      }
+
+      // Rules
+      // A non-guest user can create a document.
+      allow create: if request.auth.uid != null && isGuest() == false;
+
+      // Viewers can read, public can read if allowed
+      allow read: if (request.auth.uid != null && isViewer()) || isPublicViewer();
+      
+      // Editors can update, but not if they are a guest
+      allow update: if ((request.auth.uid != null && isEditor()) || isPublicEditor()) && isGuest() == false;
+
+      // Only owners can delete
+      allow delete: if isOwner();
     }
   }
 }

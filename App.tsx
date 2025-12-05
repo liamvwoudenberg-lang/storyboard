@@ -9,6 +9,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import NotFound from './components/NotFound';
 import ForgotPassword from './components/ForgotPassword';
+import StagingGuard from './components/StagingGuard';
 
 const App: React.FC = () => {
   const { user, loading, logout } = useAuth();
@@ -22,25 +23,27 @@ const App: React.FC = () => {
   }
 
   return (
-    <Routes>
-      {/* Public Share Route - Accessible by anyone */}
-      <Route path="/share/:projectId" element={<ShareViewer />} />
+    <StagingGuard>
+      <Routes>
+        {/* Public Share Route - Accessible by anyone */}
+        <Route path="/share/:projectId" element={<ShareViewer />} />
 
-      {user ? (
-        <>
-          <Route path="/" element={<Dashboard user={user} onSignOut={logout} />} />
-          <Route path="/editor/:projectId" element={<Editor user={user} onSignOut={logout} />} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
-        </>
-      ) : (
-        <>
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/" element={<Navigate to="/login" replace />} />
-        </>
-      )}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        {user ? (
+          <>
+            <Route path="/" element={<Dashboard user={user} onSignOut={logout} />} />
+            <Route path="/editor/:projectId" element={<Editor user={user} onSignOut={logout} />} />
+            <Route path="/login" element={<Navigate to="/" replace />} />
+          </>
+        ) : (
+          <>
+            <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/" element={<Navigate to="/login" replace />} />
+          </>
+        )}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </StagingGuard>
   );
 };
 
