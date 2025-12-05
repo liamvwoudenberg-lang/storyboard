@@ -1,10 +1,10 @@
+
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User } from 'firebase/auth';
 import { Plus, Film, Clock, MoreVertical, LogOut, Loader2 } from 'lucide-react';
-import { useFirestore } from '../hooks/useFirestore';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { useStoryboards } from '../hooks/useStoryboards';
+import { useStoryboardEditor } from '../hooks/useStoryboardEditor';
 
 interface DashboardProps {
   user: User;
@@ -13,25 +13,15 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user, onSignOut }) => {
   const navigate = useNavigate();
-  const { docs: projects, isLoading } = useFirestore('storyboards');
+  const { docs: projects, loading } = useStoryboards();
+  const { createStoryboard } = useStoryboardEditor();
 
   const handleCreateNew = async () => {
     try {
-      const newProject = await addDoc(collection(db, 'storyboards'), {
-        title: 'Untitled Storyboard',
-        ownerId: user.uid,
-        createdAt: serverTimestamp(),
-        lastEdited: serverTimestamp(),
-        sequences: [
-          {
-            id: `seq_${Date.now()}`,
-            title: 'Scene 1',
-            frames: []
-          }
-        ],
-        aspectRatio: '16:9'
-      });
-      navigate(`/editor/${newProject.id}`);
+      const newProjectId = await createStoryboard(user.uid, 'Untitled Storyboard');
+      if (newProjectId) {
+        navigate(`/editor/${newProjectId}`);
+      }
     } catch (error) {
       console.error("Error creating new storyboard:", error);
     }
@@ -92,7 +82,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onSignOut }) => {
           </button>
         </div>
 
-        {isLoading ? (
+        {loading ? (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
           </div>
@@ -133,7 +123,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onSignOut }) => {
                     </h3>
                     <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">
                       <Clock size={12} />
-                      <span>Edited {new Date(proj.lastEdited?.toDate()).toLocaleString()}</span>
+                      <span>Edited {new Date(proj.updatedAt?.toDate()).toLocaleString()}</span>
                     </div>
                   </div>
                   

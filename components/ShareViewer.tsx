@@ -1,14 +1,11 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import Header from './Header';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import MovieCard from './MovieCard';
-import { X, MonitorPlay, ChevronLeft, ChevronRight, ZoomIn } from 'lucide-react';
-import { useFirestore } from '../hooks/useFirestore';
-import { useParams, useNavigate } from 'react-router-dom';
-import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
-import { DndContext, closestCenter } from '@dnd-kit/core';
+import { Loader2 } from 'lucide-react';
+import { useStoryboardEditor } from '../hooks/useStoryboardEditor';
 
-// Reusing interfaces from Editor (In a real app, these should be shared in a types file)
+// Reusing interfaces from Editor
 interface FrameData {
   id: string | number;
   script: string;
@@ -30,50 +27,36 @@ interface SequenceData {
 
 const ShareViewer: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const navigate = useNavigate();
-  
-  const [projectTitle, setProjectTitle] = useState("Loading...");
-  const [aspectRatio, setAspectRatio] = useState("16:9");
-  const [sequences, setSequences] = useState<SequenceData[]>([]);
+
+  const { 
+    currentDoc: project, 
+    status, 
+    error, 
+    subscribeToStoryboard, 
+    debouncedSave 
+  } = useStoryboardEditor();
+
   const [activeCommentFrameId, setActiveCommentFrameId] = useState<string | number | null>(null);
   const [newComment, setNewComment] = useState("");
 
-  const { loadProject, saveProject } = useFirestore();
-
-  // Load project data
   useEffect(() => {
-    const initProject = async () => {
-      if (projectId) {
-        try {
-          const loadedData = await loadProject(projectId);
-          if (loadedData) {
-            setSequences(loadedData.sequences || []);
-            setProjectTitle(loadedData.projectTitle || "Untitled Storyboard");
-            setAspectRatio(loadedData.aspectRatio || "16:9");
-          } else {
-             setProjectTitle("Project Not Found");
-          }
-        } catch (error) {
-          console.error("Error loading shared project:", error);
-          setProjectTitle("Error Loading Project");
-        }
-      }
-    };
-    initProject();
-  }, [projectId, loadProject]);
+    if (projectId) {
+      const unsubscribe = subscribeToStoryboard(projectId);
+      return () => unsubscribe();
+    }
+  }, [projectId, subscribeToStoryboard]);
 
-  // Handle adding a comment
   const handleAddComment = async (frameId: string | number) => {
-    if (!newComment.trim() || !projectId) return;
+    if (!newComment.trim() || !projectId || !project) return;
 
     const commentData = {
        id: `comment_${Date.now()}`,
        text: newComment,
-       author: "Guest", // In a real app, maybe prompt for name
-       createdAt: new Date().toISOString()
+       author: "Guest",
+       createdAt: new Date().toISOString() // Using client time for simplicity here
     };
 
-    const updatedSequences = sequences.map(seq => ({
+    const updatedSequences = project.sequences.map(seq => ({
        ...seq,
        frames: seq.frames.map(f => {
           if (f.id === frameId) {
@@ -83,37 +66,26 @@ const ShareViewer: React.FC = () => {
        })
     }));
 
-    setSequences(updatedSequences);
+    debouncedSave(projectId, { sequences: updatedSequences });
+    
     setNewComment("");
     setActiveCommentFrameId(null);
-    
-    try {
-      const projectDataToSave = {
-        sequences: updatedSequences,
-        // We don't update other fields, preserving the existing data
-        projectTitle,
-        aspectRatio,
-      };
-      // We pass `null` for the userId to indicate a guest comment
-      await saveProject(projectId, projectDataToSave, null);
-    } catch (error) {
-      console.error("Error saving comment:", error);
-      // Optionally, revert the optimistic update here
-      alert("Failed to save comment. Please try again.");
-    }
   };
+
+  if (status === 'loading') return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="w-8 h-8 text-indigo-500 animate-spin" /></div>;
+  if (error) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-red-400">Error: {error}</div>;
+  if (!project) return <div className="min-h-screen bg-slate-950 flex items-center justify-center">Project not found.</div>;
 
   let globalFrameCount = 0;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
-       {/* Simple Header */}
        <header className="h-16 border-b border-gray-800 bg-slate-900/50 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-30">
           <div className="flex items-center gap-3">
              <div className="bg-gradient-to-tr from-indigo-500 to-purple-500 w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
                S
              </div>
-             <h1 className="font-bold text-lg tracking-tight">Storybored <span className="text-gray-500 font-normal mx-2">/</span> <span className="text-indigo-300">{projectTitle}</span></h1>
+             <h1 className="font-bold text-lg tracking-tight">Storybored <span className="text-gray-500 font-normal mx-2">/</span> <span className="text-indigo-300">{project.projectTitle}</span></h1>
           </div>
           <div className="text-xs font-medium px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-full border border-indigo-500/20">
              Read-Only View
@@ -122,7 +94,7 @@ const ShareViewer: React.FC = () => {
 
        <main className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
           <div className="space-y-12">
-             {sequences.map((sequence) => {
+             {project.sequences.map((sequence) => {
                 const currentGlobalIndex = globalFrameCount;
                 globalFrameCount += sequence.frames.length;
 
@@ -133,7 +105,6 @@ const ShareViewer: React.FC = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
                          {sequence.frames.map((frame, index) => (
                             <div key={frame.id} className="flex flex-col gap-3">
-                               {/* We reuse MovieCard in Read-Only Mode */}
                                <MovieCard
                                   id={frame.id}
                                   index={currentGlobalIndex + index}
@@ -142,8 +113,8 @@ const ShareViewer: React.FC = () => {
                                   imageUrl={frame.imageUrl}
                                   videoUrl={frame.videoUrl}
                                   audioUrl={frame.audioUrl}
-                                  aspectRatio={aspectRatio}
-                                  shotType={frame.shotType}
+                                  aspectRatio={project.aspectRatio}
+                                  shotType={frame.shotTshotType}
                                   cameraMove={frame.cameraMove}
                                   drawingData={frame.drawingData}
                                   onUpdate={() => {}} // No-op
@@ -151,7 +122,6 @@ const ShareViewer: React.FC = () => {
                                   readOnly={true}
                                />
                                
-                               {/* Comments Section */}
                                <div className="bg-slate-900 border border-gray-800 rounded-lg p-3 text-sm">
                                   {frame.comments && frame.comments.length > 0 && (
                                      <div className="space-y-2 mb-3 max-h-32 overflow-y-auto">

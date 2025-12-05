@@ -1,9 +1,8 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './Header';
 import MovieCard from './MovieCard';
 import { Plus, Save, Loader2, FileDown, Settings, X, MonitorPlay, ChevronLeft, ChevronRight, Layers, ZoomIn } from 'lucide-react';
-import { useFirestore } from '../hooks/useFirestore';
 import { useAuth } from '../context/AuthContext';
 import { User } from 'firebase/auth';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -30,6 +29,7 @@ import {
 } from '@dnd-kit/sortable';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useStoryboardEditor } from '../hooks/useStoryboardEditor';
 
 // ... (interface definitions remain the same)
 interface FrameData {
@@ -68,18 +68,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
   
   // App State
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [projectTitle, setProjectTitle] = useState("Untitled Storyboard");
-  const [aspectRatio, setAspectRatio] = useState("16:9");
 
-  // Sequences State
-  const [sequences, setSequences] = useState<SequenceData[]>([
-    {
-      id: 'seq_1',
-      title: 'Scene 1',
-      frames: []
-    }
-  ]);
-  
   // Drag State
   const [activeId, setActiveId] = useState<string | number | null>(null);
 
@@ -87,7 +76,14 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
   const [isPresenting, setIsPresenting] = useState(false);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
 
-  const { saveProject, loadProject, isSaving, isLoading } = useFirestore();
+  const { 
+    currentDoc: project, 
+    status, 
+    error, 
+    subscribeToStoryboard, 
+    debouncedSave, 
+    manualSave 
+  } = useStoryboardEditor();
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -96,32 +92,12 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     })
   );
 
-  const allFrames = useMemo(() => {
-    return sequences.flatMap(seq => seq.frames);
-  }, [sequences]);
-
   useEffect(() => {
-    const initProject = async () => {
-      if (user && projectId) {
-        try {
-          const loadedData = await loadProject(projectId);
-          if (loadedData) {
-            setSequences(loadedData.sequences || sequences); 
-            setProjectTitle(loadedData.projectTitle || "Untitled Storyboard");
-            setAspectRatio(loadedData.aspectRatio || "16:9");
-          } else if (!isGuest) {
-            // If a logged-in user lands on a non-existent project, redirect.
-            console.warn("Project not found, redirecting.");
-            navigate('/');
-          }
-        } catch (error) {
-          console.error("Initialization error:", error);
-          if (!isGuest) navigate('/');
-        }
-      }
-    };
-    initProject();
-  }, [user, projectId, loadProject, navigate, isGuest]);
+    if (projectId) {
+      const unsubscribe = subscribeToStoryboard(projectId);
+      return () => unsubscribe();
+    }
+  }, [projectId, subscribeToStoryboard]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -132,21 +108,22 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPresenting, currentSlideIndex, allFrames.length]);
+  }, [isPresenting, currentSlideIndex, project?.frames?.length]);
 
   const handleAddScene = () => {
-    setSequences(prev => [
-      ...prev,
+    const newSequences = [
+      ...(project?.sequences || []),
       {
         id: `seq_${Date.now()}`,
-        title: `Scene ${prev.length + 1}`,
+        title: `Scene ${project?.sequences?.length + 1}`,
         frames: []
       }
-    ]);
+    ];
+    debouncedSave(projectId, { sequences: newSequences });
   };
 
   const handleAddFrame = (sequenceId: string) => {
-    setSequences(prev => prev.map(seq => {
+    const newSequences = project.sequences.map(seq => {
       if (seq.id !== sequenceId) return seq;
       return {
         ...seq,
@@ -159,33 +136,37 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
           }
         ]
       };
-    }));
+    });
+    debouncedSave(projectId, { sequences: newSequences });
   };
 
   const handleDeleteFrame = (frameId: string | number) => {
     if (window.confirm('Are you sure you want to delete this frame?')) {
-      setSequences(prev => prev.map(seq => ({
+      const newSequences = project.sequences.map(seq => ({
         ...seq,
         frames: seq.frames.filter(f => f.id !== frameId)
-      })));
+      }));
+      debouncedSave(projectId, { sequences: newSequences });
       if (isPresenting) {
-        if (allFrames.length <= 1) setIsPresenting(false);
-        else if (currentSlideIndex >= allFrames.length - 1) setCurrentSlideIndex(Math.max(0, allFrames.length - 2));
+        if (project.frames.length <= 1) setIsPresenting(false);
+        else if (currentSlideIndex >= project.frames.length - 1) setCurrentSlideIndex(Math.max(0, project.frames.length - 2));
       }
     }
   };
 
   const handleUpdateFrame = (frameId: string | number, field: keyof FrameData, value: any) => {
-    setSequences(prev => prev.map(seq => ({
+    const newSequences = project.sequences.map(seq => ({
       ...seq,
       frames: seq.frames.map(f => f.id === frameId ? { ...f, [field]: value } : f)
-    })));
+    }));
+    debouncedSave(projectId, { sequences: newSequences });
   };
 
   const handleUpdateSceneTitle = (sequenceId: string, newTitle: string) => {
-    setSequences(prev => prev.map(seq => 
+    const newSequences = project.sequences.map(seq => 
       seq.id === sequenceId ? { ...seq, title: newTitle } : seq
-    ));
+    );
+    debouncedSave(projectId, { sequences: newSequences });
   };
 
   const handleSave = async () => {
@@ -195,12 +176,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     }
 
     if (user && projectId) {
-      const projectData = {
-        sequences,
-        projectTitle: projectTitle,
-        aspectRatio
-      };
-      await saveProject(projectId, projectData, user.uid);
+      await manualSave(projectId, project);
     }
   };
 
@@ -228,7 +204,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
             pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`${projectTitle.replace(/ /g, '_')}_storyboard.pdf`);
+            pdf.save(`${project.projectTitle.replace(/ /g, '_')}_storyboard.pdf`);
             setIsExporting(false);
             alert('Storyboard exported as PDF!');
         }).catch(err => {
@@ -242,11 +218,22 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         alert('Error: Storyboard element not found.');
     }
   };
+  
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTitle = e.target.value;
+    if (project) {
+      debouncedSave(project.id, { projectTitle: newTitle });
+    }
+  };
 
 
   // ... (Drag & Drop logic, Presentation, PDF Export remain the same)
 
   let globalFrameCount = 0;
+  
+  if (status === 'loading') return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="w-8 h-8 text-indigo-500 animate-spin" /></div>;
+  if (error) return <div className="min-h-screen bg-slate-950 flex items-center justify-center">Error: {error}</div>;
+  if (!project) return <div className="min-h-screen bg-slate-950 flex items-center justify-center">No Project Loaded</div>;
 
   return (
     <>
@@ -265,8 +252,12 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             {/* Toolbar */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
                 <div>
-                    <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">{projectTitle}</h1>
-                    <p className="text-gray-400 text-sm">Last saved: {new Date().toLocaleTimeString()}</p>
+                    <input 
+                      defaultValue={project.projectTitle} 
+                      onChange={handleTitleChange} 
+                      className="text-3xl font-bold text-white mb-2 tracking-tight bg-transparent border-none focus:outline-none focus:ring-0"
+                    />
+                    <p className="text-gray-400 text-sm">Last saved: {new Date(project.lastEdited?.toDate()).toLocaleString()}</p>
                 </div>
                 
                 <div className="flex flex-wrap items-center gap-3">
@@ -281,11 +272,11 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
 
                   <button 
                     onClick={handleSave}
-                    disabled={isSaving || isLoading}
+                    disabled={status === 'saving' || status === 'loading'}
                     className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {isSaving ? 'Saving...' : 'Save Project'}
+                    {status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {status === 'saving' ? 'Saving...' : 'Save Project'}
                   </button>
                 </div>
             </div>

@@ -84,6 +84,5 @@ app.get('/*', async (req, res) => {
 });
 
 exports.app = functions
-  .region('europe-west4')
   .runWith({ memory: '256MB', timeoutSeconds: 60 })
   .https.onRequest(app);
