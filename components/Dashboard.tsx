@@ -19,7 +19,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onSignOut }) => {
     try {
       const newProject = await addDoc(collection(db, 'storyboards'), {
         title: 'Untitled Storyboard',
-        userId: user.uid,
+        ownerId: user.uid,
         createdAt: serverTimestamp(),
         lastEdited: serverTimestamp(),
         sequences: [

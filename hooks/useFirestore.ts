@@ -23,7 +23,7 @@ export const useFirestore = (collectionName?: string) => {
   useEffect(() => {
     if (collectionName && user) {
       setIsLoading(true);
-      const q = query(collection(db, collectionName), where("userId", "==", user.uid));
+      const q = query(collection(db, collectionName), where("ownerId", "==", user.uid));
       const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const documents: any[] = [];
         querySnapshot.forEach((doc) => {
@@ -65,7 +65,7 @@ export const useFirestore = (collectionName?: string) => {
   }, []);
 
   // Callback for saving a single document (for the Editor)
-  const saveProject = useCallback(async (projectId: string, data: any, userId: string | null) => {
+  const saveProject = useCallback(async (projectId: string, data: any, ownerId: string | null) => {
     setIsSaving(true);
     try {
       const docRef = doc(db, 'storyboards', projectId);
@@ -74,8 +74,8 @@ export const useFirestore = (collectionName?: string) => {
         lastEdited: serverTimestamp(),
       };
 
-      if (userId) {
-        dataToUpdate.userId = userId;
+      if (ownerId) {
+        dataToUpdate.ownerId = ownerId;
       }
       
       await updateDoc(docRef, dataToUpdate);
