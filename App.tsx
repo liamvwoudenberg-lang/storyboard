@@ -25,22 +25,24 @@ const App: React.FC = () => {
   return (
     <StagingGuard>
       <Routes>
-        {/* Public Share Route - Accessible by anyone */}
+        {/* Public routes accessible to everyone */}
         <Route path="/share/:projectId" element={<ShareViewer />} />
 
-        {user ? (
-          <>
-            <Route path="/" element={<Dashboard user={user} onSignOut={logout} />} />
-            <Route path="/editor/:projectId" element={<Editor user={user} onSignOut={logout} />} />
-            <Route path="/login" element={<Navigate to="/" replace />} />
-          </>
-        ) : (
-          <>
-            <Route path="/login" element={<Login />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/" element={<Navigate to="/login" replace />} />
-          </>
-        )}
+        {/* Auth routes */}
+        <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/forgot-password" element={user ? <Navigate to="/" replace /> : <ForgotPassword />} />
+
+        {/* Protected routes */}
+        <Route 
+          path="/" 
+          element={user ? <Dashboard user={user} onSignOut={logout} /> : <Navigate to="/login" replace />} 
+        />
+        <Route 
+          path="/editor/:projectId" 
+          element={user ? <Editor user={user} onSignOut={logout} /> : <Navigate to="/login" replace />} 
+        />
+
+        {/* Not Found */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </StagingGuard>
