@@ -131,6 +131,12 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPresenting, currentSlideIndex, allFrames.length]);
 
+  const handleUpdateProject = (data: any) => {
+    if (project) {
+      debouncedSave(project.id, data);
+    }
+  };
+
   const handleAddScene = () => {
     if (!project) return;
     const newSequences = [
@@ -141,14 +147,14 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         frames: []
       }
     ];
-    debouncedSave(project.id, { sequences: newSequences });
+    handleUpdateProject({ sequences: newSequences });
   };
 
   const handleDeleteScene = (sequenceId: string) => {
     if (!project) return;
     if (window.confirm('Are you sure you want to delete this entire scene?')) {
         const newSequences = sequences.filter(s => s.id !== sequenceId);
-        debouncedSave(project.id, { sequences: newSequences });
+        handleUpdateProject({ sequences: newSequences });
     }
   };
 
@@ -170,7 +176,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         ]
       };
     });
-    debouncedSave(project.id, { sequences: newSequences });
+    handleUpdateProject({ sequences: newSequences });
   };
 
   const handleDeleteFrame = (frameId: string | number) => {
@@ -180,7 +186,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         ...seq,
         frames: seq.frames.filter(f => f.id !== frameId)
       }));
-      debouncedSave(project.id, { sequences: newSequences });
+      handleUpdateProject({ sequences: newSequences });
       
       // Adjust presentation if needed
       if (isPresenting) {
@@ -196,7 +202,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
       ...seq,
       frames: seq.frames.map(f => f.id === frameId ? { ...f, [field]: value } : f)
     }));
-    debouncedSave(project.id, { sequences: newSequences });
+    handleUpdateProject({ sequences: newSequences });
   };
 
   const handleUpdateSceneTitle = (sequenceId: string, newTitle: string) => {
@@ -204,7 +210,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     const newSequences = sequences.map(seq => 
       seq.id === sequenceId ? { ...seq, title: newTitle } : seq
     );
-    debouncedSave(project.id, { sequences: newSequences });
+    handleUpdateProject({ sequences: newSequences });
   };
 
   const handleSave = async () => {
@@ -230,30 +236,22 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
 
   const handleExportPDF = () => {
     setIsExporting(true);
-    // Use a slight delay to allow UI to update
     setTimeout(() => {
         const storyboardElement = document.getElementById('storyboard-preview');
         
         if (storyboardElement) {
-            html2canvas(storyboardElement, {
-                useCORS: true,
-                scale: 1.5, 
-                backgroundColor: '#0f172a' // Match bg color
-            }).then(canvas => {
-                // Determine orientation based on aspect ratio
+            html2canvas(storyboardElement, { useCORS: true, scale: 1.5, backgroundColor: '#0f172a' }).then(canvas => {
                 const orientation = canvas.width > canvas.height ? 'l' : 'p';
                 const pdf = new jsPDF(orientation, 'px', [canvas.width, canvas.height]);
-                
                 const pdfWidth = pdf.internal.pageSize.getWidth();
                 const pdfHeight = pdf.internal.pageSize.getHeight();
-                
                 pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, pdfHeight);
                 pdf.save(`${project.projectTitle.replace(/ /g, '_')}_storyboard.pdf`);
                 setIsExporting(false);
             }).catch(err => {
                 console.error("Error exporting to PDF: ", err);
                 setIsExporting(false);
-                alert('Could not export to PDF. Please check console.');
+                alert('Could not export to PDF. Check console.');
             });
         } else {
             console.error("Could not find storyboard element.");
@@ -263,63 +261,41 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
   };
   
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (project) {
-      debouncedSave(project.id, { projectTitle: e.target.value });
-    }
-  };
-
-  // DnD Handlers
-  const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event;
-    setActiveId(active.id);
-    const frame = sequences.flatMap(s => s.frames).find(f => f.id === active.id);
-    if (frame) setActiveFrame(frame);
+    handleUpdateProject({ projectTitle: e.target.value });
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = sequences.flatMap(s => s.frames).findIndex(f => f.id === active.id);
+    const newIndex = sequences.flatMap(s => s.frames).findIndex(f => f.id === over.id);
     
-    if (!over) {
-        setActiveId(null);
-        setActiveFrame(null);
-        return;
-    }
+    const flatFrames = sequences.flatMap(s => s.frames);
+    const movedFrames = arrayMove(flatFrames, oldIndex, newIndex);
 
-    const activeId = active.id;
-    const overId = over.id;
+    // This is a simplified re-grouping. A more complex logic might be needed 
+    // if you want to move frames between sequences through drag and drop.
+    let frameIdx = 0;
+    const newSequences = sequences.map(seq => {
+        const newFrames = movedFrames.slice(frameIdx, frameIdx + seq.frames.length);
+        frameIdx += seq.frames.length;
+        return { ...seq, frames: newFrames };
+    });
 
-    if (activeId !== overId) {
-        // Find source and dest sequences
-        const sourceSeq = sequences.find(s => s.frames.some(f => f.id === activeId));
-        const destSeq = sequences.find(s => s.frames.some(f => f.id === overId));
-
-        if (sourceSeq && destSeq && sourceSeq.id === destSeq.id && project) {
-            const oldIndex = sourceSeq.frames.findIndex(f => f.id === activeId);
-            const newIndex = destSeq.frames.findIndex(f => f.id === overId);
-            
-            const newFrames = arrayMove(sourceSeq.frames, oldIndex, newIndex);
-            
-            const newSequences = sequences.map(s => 
-                s.id === sourceSeq.id ? { ...s, frames: newFrames } : s
-            );
-            debouncedSave(project.id, { sequences: newSequences });
-        }
-    }
-    
+    handleUpdateProject({ sequences: newSequences });
     setActiveId(null);
     setActiveFrame(null);
   };
-
-  // Presentation Logic
-  const nextSlide = () => {
-    if (currentSlideIndex < allFrames.length - 1) setCurrentSlideIndex(prev => prev + 1);
+  
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id);
+    const frame = sequences.flatMap(s => s.frames).find(f => f.id === event.active.id);
+    if (frame) setActiveFrame(frame);
   };
 
-  const prevSlide = () => {
-    if (currentSlideIndex > 0) setCurrentSlideIndex(prev => prev - 1);
-  };
-
-  // ----------------------------------------------------------------------
+  const nextSlide = () => setCurrentSlideIndex(prev => Math.min(prev + 1, allFrames.length - 1));
+  const prevSlide = () => setCurrentSlideIndex(prev => Math.max(prev - 1, 0));
 
   if (status === 'loading') return <div className="min-h-screen bg-slate-950 flex items-center justify-center"><Loader2 className="w-8 h-8 text-indigo-500 animate-spin" /></div>;
   if (error) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-red-400">Error: {error}</div>;
@@ -330,11 +306,7 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
   return (
     <>
       {showGuestPrompt && (
-        <GuestSavePrompt 
-          onClose={() => setShowGuestPrompt(false)}
-          onSignUp={handleGuestSignUp}
-          onSignIn={handleGuestSignIn}
-        />
+        <GuestSavePrompt onClose={() => setShowGuestPrompt(false)} onSignUp={handleGuestSignUp} onSignIn={handleGuestSignIn} />
       )}
       
       {showShareModal && (
@@ -345,102 +317,57 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
             ownerName={user.displayName || ""}
             ownerPhotoURL={user.photoURL || ""}
             onClose={() => setShowShareModal(false)}
+            project={project} // Pass the full project document
+            onUpdate={handleUpdateProject} // Pass the update function
         />
       )}
 
-      {/* Presentation Overlay */}
       {isPresenting && allFrames.length > 0 && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
-           <button 
-             onClick={() => setIsPresenting(false)}
-             className="absolute top-4 right-4 text-white/50 hover:text-white p-2"
-           >
-             <X size={32} />
-           </button>
-           
+           <button onClick={() => setIsPresenting(false)} className="absolute top-4 right-4 text-white/50 hover:text-white p-2"><X size={32} /></button>
            <div className="w-full max-w-6xl aspect-video bg-black flex items-center justify-center relative">
-              {allFrames[currentSlideIndex].imageUrl ? (
-                  <img src={allFrames[currentSlideIndex].imageUrl} className="max-w-full max-h-full object-contain" />
-              ) : allFrames[currentSlideIndex].videoUrl ? (
+              {allFrames[currentSlideIndex]?.imageUrl ? (
+                  <img src={allFrames[currentSlideIndex].imageUrl} className="max-w-full max-h-full object-contain" alt="" />
+              ) : allFrames[currentSlideIndex]?.videoUrl ? (
                   <video src={allFrames[currentSlideIndex].videoUrl} controls autoPlay className="max-w-full max-h-full" />
               ) : (
-                  <div className="text-gray-500 flex flex-col items-center">
-                      <Layers size={64} className="mb-4 opacity-50"/>
-                      <span className="text-xl">Empty Frame</span>
-                  </div>
+                  <div className="text-gray-500 flex flex-col items-center"><Layers size={64} className="mb-4 opacity-50"/><span className="text-xl">Empty Frame</span></div>
               )}
-              
               <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/80 to-transparent">
-                 <p className="text-white text-xl font-medium mb-2">{allFrames[currentSlideIndex].script}</p>
-                 {allFrames[currentSlideIndex].sound && <p className="text-gray-400 text-sm flex items-center gap-2">🎵 {allFrames[currentSlideIndex].sound}</p>}
+                 <p className="text-white text-xl font-medium mb-2">{allFrames[currentSlideIndex]?.script}</p>
+                 {allFrames[currentSlideIndex]?.sound && <p className="text-gray-400 text-sm flex items-center gap-2">🎵 {allFrames[currentSlideIndex].sound}</p>}
               </div>
            </div>
-
            <div className="absolute bottom-8 flex gap-4 items-center">
-              <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="p-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all">
-                 <ChevronLeft size={24} />
-              </button>
+              <button onClick={prevSlide} disabled={currentSlideIndex === 0} className="p-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all"><ChevronLeft size={24} /></button>
               <span className="text-white/50 font-mono">{currentSlideIndex + 1} / {allFrames.length}</span>
-              <button onClick={nextSlide} disabled={currentSlideIndex === allFrames.length - 1} className="p-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all">
-                 <ChevronRight size={24} />
-              </button>
+              <button onClick={nextSlide} disabled={currentSlideIndex === allFrames.length - 1} className="p-3 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 text-white transition-all"><ChevronRight size={24} /></button>
            </div>
         </div>
       )}
 
       <div className="h-screen bg-slate-950 text-slate-100 flex overflow-hidden font-sans">
-         <Header 
-            user={user}
-            onSignOut={onSignOut}
-            isSidebarOpen={isSidebarOpen}
-            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-            onBackToDashboard={() => navigate('/')}
-            onPresent={() => setIsPresenting(true)}
-            onShare={() => setShowShareModal(true)}
-         />
-
+         <Header user={user} onSignOut={onSignOut} isSidebarOpen={isSidebarOpen} onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} onBackToDashboard={() => navigate('/')} onPresent={() => setIsPresenting(true)} onShare={() => setShowShareModal(true)} />
          <main className="flex-1 overflow-y-auto w-full p-4 sm:p-6 lg:p-10 scroll-smooth">
           <div id="storyboard-preview" className="max-w-7xl mx-auto pb-20">
-            
-            {/* Toolbar */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
                 <div>
-                    <input 
-                      value={project.projectTitle} 
-                      onChange={handleTitleChange} 
-                      className="text-3xl font-bold text-white mb-2 tracking-tight bg-transparent border-none focus:outline-none focus:ring-0 w-full placeholder-gray-600"
-                      placeholder="Untitled Project"
-                    />
+                    <input value={project.projectTitle} onChange={handleTitleChange} className="text-3xl font-bold text-white mb-2 tracking-tight bg-transparent border-none focus:outline-none focus:ring-0 w-full placeholder-gray-600" placeholder="Untitled Project"/>
                     <p className="text-gray-400 text-sm">Last saved: {project.lastEdited?.toDate ? new Date(project.lastEdited.toDate()).toLocaleString() : 'Unsaved'}</p>
                 </div>
-                
                 <div className="flex flex-wrap items-center gap-3">
-                  <button 
-                    onClick={handleExportPDF}
-                    disabled={isExporting}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 border border-slate-700 rounded-lg transition-all text-sm font-medium disabled:opacity-50"
-                  >
+                  <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 border border-slate-700 rounded-lg transition-all text-sm font-medium disabled:opacity-50">
                     {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                     PDF
                   </button>
-
-                  <button 
-                    onClick={handleSave}
-                    disabled={status === 'saving' || status === 'loading'}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
+                  <button onClick={handleSave} disabled={status === 'saving' || status === 'loading'} className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
                     {status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     {status === 'saving' ? 'Saving...' : 'Save Project'}
                   </button>
                 </div>
             </div>
 
-            <DndContext 
-                sensors={sensors} 
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-            >
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
                 <div className="space-y-12">
                     {sequences.map((sequence, seqIndex) => {
                         const currentGlobalIndex = globalFrameCount;
@@ -450,29 +377,13 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                             <div key={sequence.id} className="group/scene">
                                 <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
                                     <div className="flex items-center gap-4 flex-1">
-                                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-gray-400">
-                                            {seqIndex + 1}
-                                        </div>
-                                        <input 
-                                            value={sequence.title}
-                                            onChange={(e) => handleUpdateSceneTitle(sequence.id, e.target.value)}
-                                            className="text-xl font-bold text-slate-200 bg-transparent border-none focus:outline-none focus:ring-0 flex-1 placeholder-gray-600"
-                                            placeholder="Scene Title"
-                                        />
+                                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-gray-400">{seqIndex + 1}</div>
+                                        <input value={sequence.title} onChange={(e) => handleUpdateSceneTitle(sequence.id, e.target.value)} className="text-xl font-bold text-slate-200 bg-transparent border-none focus:outline-none focus:ring-0 flex-1 placeholder-gray-600" placeholder="Scene Title" />
                                     </div>
-                                    <button 
-                                        onClick={() => handleDeleteScene(sequence.id)}
-                                        className="text-gray-500 hover:text-red-400 p-2 rounded hover:bg-slate-800 opacity-0 group-hover/scene:opacity-100 transition-opacity"
-                                        title="Delete Scene"
-                                    >
-                                        <Trash2 size={18} />
-                                    </button>
+                                    <button onClick={() => handleDeleteScene(sequence.id)} className="text-gray-500 hover:text-red-400 p-2 rounded hover:bg-slate-800 opacity-0 group-hover/scene:opacity-100 transition-opacity" title="Delete Scene"><Trash2 size={18} /></button>
                                 </div>
 
-                                <SortableContext 
-                                    items={sequence.frames.map(f => f.id)} 
-                                    strategy={rectSortingStrategy}
-                                >
+                                <SortableContext items={sequence.frames.map(f => f.id)} strategy={rectSortingStrategy}>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                         {sequence.frames.map((frame, index) => (
                                             <MovieCard 
@@ -492,15 +403,8 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                                                 onDelete={() => handleDeleteFrame(frame.id)}
                                             />
                                         ))}
-                                        
-                                        {/* Add Frame Button */}
-                                        <button 
-                                            onClick={() => handleAddFrame(sequence.id)}
-                                            className="flex flex-col items-center justify-center h-full min-h-[300px] rounded-xl border-2 border-dashed border-gray-800 bg-slate-900/30 hover:bg-slate-900 hover:border-indigo-500/50 transition-all duration-300 group/add"
-                                        >
-                                            <div className="w-12 h-12 rounded-full bg-slate-800 group-hover/add:bg-indigo-600/20 group-hover/add:text-indigo-400 flex items-center justify-center mb-4 transition-colors">
-                                                <Plus className="w-6 h-6 text-gray-400 group-hover/add:text-indigo-400" />
-                                            </div>
+                                        <button onClick={() => handleAddFrame(sequence.id)} className="flex flex-col items-center justify-center h-full min-h-[300px] rounded-xl border-2 border-dashed border-gray-800 bg-slate-900/30 hover:bg-slate-900 hover:border-indigo-500/50 transition-all duration-300 group/add">
+                                            <div className="w-12 h-12 rounded-full bg-slate-800 group-hover/add:bg-indigo-600/20 group-hover/add:text-indigo-400 flex items-center justify-center mb-4 transition-colors"><Plus className="w-6 h-6 text-gray-400 group-hover/add:text-indigo-400" /></div>
                                             <span className="font-medium text-gray-400 group-hover/add:text-indigo-300">Add Frame</span>
                                         </button>
                                     </div>
@@ -534,12 +438,8 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
                 </DragOverlay>
             </DndContext>
 
-            {/* Add Scene Button - Always at bottom */}
             <div className="mt-16 flex justify-center border-t border-gray-800 pt-10">
-                <button 
-                    onClick={handleAddScene}
-                    className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full font-semibold transition-all shadow-lg hover:shadow-xl border border-slate-700"
-                >
+                <button onClick={handleAddScene} className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full font-semibold transition-all shadow-lg hover:shadow-xl border border-slate-700">
                     <Plus size={20} />
                     Add New Scene
                 </button>

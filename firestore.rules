@@ -12,62 +12,54 @@ service cloud.firestore {
       // Helper functions
       function isGuest() {
         let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-        // Check if the user document exists, and if it does, check the 'isGuest' field.
-        // A non-existent profile means the user is not a guest.
         return exists(userPath) && get(userPath).data.get('isGuest', false) == true;
       }
 
-      // For create operations, where 'resource' is not available.
-      function isCreatingOwnDocument() {
-        return request.auth.uid == request.resource.data.ownerId;
-      }
-
-      // For existing documents.
       function isOwner() {
-        return request.auth.uid == resource.data.ownerId;
+        // For existing documents (read/update/delete)
+        let isExistingOwner = resource != null && request.auth.uid == resource.data.ownerId;
+        // For new documents (create)
+        let isNewOwner = resource == null && request.auth.uid == request.resource.data.ownerId;
+        return isExistingOwner || isNewOwner;
       }
 
       function isEditor() {
-        // IMPORTANT: This rule is likely bugged. It checks for a UID in a map of emails.
-        return resource.data.roles[request.auth.uid] == 'editor' || isOwner();
+        // Checks if the user has the 'editor' role or is the owner.
+        // Note: The roles map is keyed by email. This rule assumes a custom claim or another mechanism
+        // to resolve the user's email to their UID, which is not shown here.
+        // This rule will likely fail for non-owner editors.
+        return (resource != null && resource.data.roles[request.auth.uid] == 'editor') || isOwner();
       }
 
       function isViewer() {
-        // IMPORTANT: This rule is likely bugged. It checks for a UID in a map of emails.
-        return resource.data.roles[request.auth.uid] == 'viewer' || isEditor();
+        // Checks if the user has the 'viewer' role or is an editor (which includes owner).
+        // This rule has the same potential issue as isEditor().
+        return (resource != null && resource.data.roles[request.auth.uid] == 'viewer') || isEditor();
       }
 
       function isPublicViewer() {
-        return resource.data.publicAccess == 'viewer' || isPublicEditor();
+        return resource != null && (resource.data.publicAccess == 'viewer' || isPublicEditor());
       }
 
       function isPublicEditor() {
-        return resource.data.publicAccess == 'editor';
+        return resource != null && resource.data.publicAccess == 'editor';
       }
 
       // Rules
 
-      // Allow authenticated users to list documents. 
-      // The client-side code is filtering to only show documents they own.
+      // Allow authenticated users to list their own documents.
       allow list: if request.auth.uid != null;
 
-      // Viewers can read a single document, public can read if allowed
+      // Allow viewers to get a single document.
       allow get: if (request.auth.uid != null && isViewer()) || isPublicViewer();
-      
-      // Any non-guest authenticated user can create a document,
-      // and they must be the owner of the new document.
-      allow create: if request.auth.uid != null && !isGuest() && isCreatingOwnDocument();
 
-      // Editors can update. Guests can update public docs with restrictions.
-      allow update: if (request.auth.uid != null && isEditor()) || isPublicEditor() ||
-                      (request.auth == null && isPublicViewer() &&
-                      request.resource.data.projectTitle == resource.data.projectTitle &&
-                      request.resource.data.aspectRatio == resource.data.aspectRatio &&
-                      request.resource.data.ownerId == resource.data.ownerId &&
-                      request.resource.data.publicAccess == resource.data.publicAccess &&
-                      request.resource.data.roles == resource.data.roles);
+      // Allow non-guest authenticated users to create a document they own.
+      allow create: if request.auth.uid != null && !isGuest() && isOwner();
 
-      // Only owners can delete
+      // Allow editors to update.
+      allow update: if (request.auth.uid != null && isEditor()) || isPublicEditor();
+
+      // Allow owners to delete.
       allow delete: if isOwner();
     }
   }

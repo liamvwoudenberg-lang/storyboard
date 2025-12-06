@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Link, Users, Lock, ChevronDown, Check, Globe, AlertCircle, Trash2 } from 'lucide-react';
-import { useFirestore } from '../hooks/useFirestore'; // Assuming you have this hook
 
 interface ShareModalProps {
   projectTitle: string;
@@ -10,12 +9,13 @@ interface ShareModalProps {
   ownerName?: string;
   ownerPhotoURL?: string;
   onClose: () => void;
+  project: any; // The full project document
+  onUpdate: (data: any) => void; // Function to save changes
 }
 
 interface UserRole {
   email: string;
-  role: 'viewer' | 'editor' | 'owner';
-  // Add other user details if available, like name, photoURL
+  role: 'viewer' | 'editor';
 }
 
 const ShareModal: React.FC<ShareModalProps> = ({
@@ -25,32 +25,30 @@ const ShareModal: React.FC<ShareModalProps> = ({
   ownerName,
   ownerPhotoURL,
   onClose,
+  project,
+  onUpdate,
 }) => {
-  const { updateDocument, getDocument } = useFirestore('storyboards');
-  const [accessLevel, setAccessLevel] = useState<'restricted' | 'viewer' | 'editor'>('restricted');
+  const [accessLevel, setAccessLevel] = useState('restricted');
   const [people, setPeople] = useState<UserRole[]>([]);
   const [emailToAdd, setEmailToAdd] = useState('');
   const [roleToAdd, setRoleToAdd] = useState<'viewer' | 'editor'>('viewer');
   const [isCopied, setIsCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProjectData = useCallback(async () => {
-    const doc = await getDocument(projectId);
-    if (doc && doc.exists()) {
-      const data = doc.data();
-      setAccessLevel(data.publicAccess || 'restricted');
-      const roles = data.roles || {};
-      const currentPeople = Object.entries(roles).map(([email, role]) => ({
-        email,
-        role: role as 'viewer' | 'editor',
-      }));
+  useEffect(() => {
+    if (project) {
+      setAccessLevel(project.publicAccess || 'restricted');
+      const roles = project.roles || {};
+      // Map roles to people, but exclude the owner from this list
+      const currentPeople = Object.entries(roles)
+        .map(([email, role]) => ({
+          email,
+          role: role as 'viewer' | 'editor' | 'owner',
+        }))
+        .filter(p => p.role !== 'owner');
       setPeople(currentPeople);
     }
-  }, [getDocument, projectId]);
-
-  useEffect(() => {
-    fetchProjectData();
-  }, [fetchProjectData]);
+  }, [project]);
 
   const handleAddPerson = async () => {
     if (!emailToAdd || !/\S+@\S+\.\S+/.test(emailToAdd)) {
@@ -61,41 +59,35 @@ const ShareModal: React.FC<ShareModalProps> = ({
       setError('You cannot change the owner\'s role.');
       return;
     }
-    if (people.find(p => p.email === emailToAdd)) {
-      setError('This person already has access.');
-      return;
+    if (people.find(p => p.email === emailToAdd) || emailToAdd === ownerEmail) {
+        setError('This person already has access.');
+        return;
     }
 
     setError(null);
-    const newRoles = { ...people.reduce((acc, p) => ({ ...acc, [p.email]: p.role }), {}), [emailToAdd]: roleToAdd };
-    await updateDocument(projectId, { roles: newRoles });
-    setPeople([...people, { email: emailToAdd, role: roleToAdd }]);
+    const updatedRoles = { ...project.roles, [emailToAdd]: roleToAdd };
+    onUpdate({ roles: updatedRoles });
     setEmailToAdd('');
   };
 
   const handleRemovePerson = async (emailToRemove: string) => {
-    const newPeople = people.filter(p => p.email !== emailToRemove);
-    const newRoles = newPeople.reduce((acc, p) => ({ ...acc, [p.email]: p.role }), {});
-    await updateDocument(projectId, { roles: newRoles });
-    setPeople(newPeople);
+    const { [emailToRemove]: _, ...updatedRoles } = project.roles;
+    onUpdate({ roles: updatedRoles });
   };
 
   const handleRoleChange = async (emailToUpdate: string, newRole: 'viewer' | 'editor') => {
-    const updatedPeople = people.map(p => p.email === emailToUpdate ? { ...p, role: newRole } : p);
-    const newRoles = updatedPeople.reduce((acc, p) => ({ ...acc, [p.email]: p.role }), {});
-    await updateDocument(projectId, { roles: newRoles });
-    setPeople(updatedPeople);
+    const updatedRoles = { ...project.roles, [emailToUpdate]: newRole };
+    onUpdate({ roles: updatedRoles });
   };
 
 
   const handlePublicAccessChange = async (newAccessLevel: 'restricted' | 'viewer' | 'editor') => {
-    setAccessLevel(newAccessLevel);
-    await updateDocument(projectId, { publicAccess: newAccessLevel });
+    onUpdate({ publicAccess: newAccessLevel });
   };
 
 
   const handleCopyLink = () => {
-    const shareUrl = `${window.location.origin}/share/${projectId}`;
+    const shareUrl = `${window.location.origin}/storyboard/${projectId}`;
     navigator.clipboard.writeText(shareUrl);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2500);
@@ -108,7 +100,7 @@ const ShareModal: React.FC<ShareModalProps> = ({
       case 'viewer':
         return { icon: Globe, text: 'Anyone with the link', description: 'Anyone on the internet with the link can view' };
       case 'editor':
-        return { icon: Globe, text: 'Anyone with the link', description: 'Anyone on the internet with the link can edit' };
+          return { icon: Globe, text: 'Anyone with link can edit', description: 'Anyone on the internet with the link can edit' };
       default:
         return { icon: Lock, text: 'Restricted', description: 'Only people with access can open with the link' };
     }
