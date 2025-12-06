@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from './Header';
 import MovieCard from './MovieCard';
+import Sidebar from './Sidebar';
 import { Plus, Save, Loader2, FileDown, Settings, X, MonitorPlay, ChevronLeft, ChevronRight, Layers, ZoomIn, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { User } from 'firebase/auth';
@@ -293,6 +294,15 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
     const frame = sequences.flatMap(s => s.frames).find(f => f.id === event.active.id);
     if (frame) setActiveFrame(frame);
   };
+  
+  const handleScrollToScene = (sequenceId: string) => {
+     // A simple implementation to scroll to the scene
+     // You might want to add ids to your scene divs for this to work
+     // For now, this is a placeholder
+     console.log("Scroll to scene:", sequenceId);
+     // If you add id={sequence.id} to the scene div, you can do:
+     // document.getElementById(sequence.id)?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const nextSlide = () => setCurrentSlideIndex(prev => Math.min(prev + 1, allFrames.length - 1));
   const prevSlide = () => setCurrentSlideIndex(prev => Math.max(prev - 1, 0));
@@ -346,107 +356,112 @@ const Editor: React.FC<EditorProps> = ({ user, onSignOut }) => {
         </div>
       )}
 
-      <div className="h-screen bg-slate-950 text-slate-100 flex overflow-hidden font-sans">
+      <div className="h-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden font-sans">
          <Header user={user} onSignOut={onSignOut} isSidebarOpen={isSidebarOpen} onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} onBackToDashboard={() => navigate('/')} onPresent={() => setIsPresenting(true)} onShare={() => setShowShareModal(true)} />
-         <main className="flex-1 overflow-y-auto w-full p-4 sm:p-6 lg:p-10 scroll-smooth">
-          <div id="storyboard-preview" className="max-w-7xl mx-auto pb-20">
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
-                <div>
-                    <input value={project.projectTitle} onChange={handleTitleChange} className="text-3xl font-bold text-white mb-2 tracking-tight bg-transparent border-none focus:outline-none focus:ring-0 w-full placeholder-gray-600" placeholder="Untitled Project"/>
-                    <p className="text-gray-400 text-sm">Last saved: {project.lastEdited?.toDate ? new Date(project.lastEdited.toDate()).toLocaleString() : 'Unsaved'}</p>
+         
+         <div className="flex flex-1 overflow-hidden">
+             <Sidebar isOpen={isSidebarOpen} sequences={sequences} onSelectScene={handleScrollToScene} />
+             
+             <main className="flex-1 overflow-y-auto w-full p-4 sm:p-6 lg:p-10 scroll-smooth">
+              <div id="storyboard-preview" className="max-w-7xl mx-auto pb-20">
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
+                    <div>
+                        <input value={project.projectTitle} onChange={handleTitleChange} className="text-3xl font-bold text-white mb-2 tracking-tight bg-transparent border-none focus:outline-none focus:ring-0 w-full placeholder-gray-600" placeholder="Untitled Project"/>
+                        <p className="text-gray-400 text-sm">Last saved: {project.lastEdited?.toDate ? new Date(project.lastEdited.toDate()).toLocaleString() : 'Unsaved'}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 border border-slate-700 rounded-lg transition-all text-sm font-medium disabled:opacity-50">
+                        {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                        PDF
+                      </button>
+                      <button onClick={handleSave} disabled={status === 'saving' || status === 'loading'} className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
+                        {status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        {status === 'saving' ? 'Saving...' : 'Save Project'}
+                      </button>
+                    </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button onClick={handleExportPDF} disabled={isExporting} className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 border border-slate-700 rounded-lg transition-all text-sm font-medium disabled:opacity-50">
-                    {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                    PDF
-                  </button>
-                  <button onClick={handleSave} disabled={status === 'saving' || status === 'loading'} className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
-                    {status === 'saving' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {status === 'saving' ? 'Saving...' : 'Save Project'}
-                  </button>
-                </div>
-            </div>
 
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                <div className="space-y-12">
-                    {sequences.map((sequence, seqIndex) => {
-                        const currentGlobalIndex = globalFrameCount;
-                        globalFrameCount += sequence.frames.length;
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+                    <div className="space-y-12">
+                        {sequences.map((sequence, seqIndex) => {
+                            const currentGlobalIndex = globalFrameCount;
+                            globalFrameCount += sequence.frames.length;
 
-                        return (
-                            <div key={sequence.id} className="group/scene">
-                                <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
-                                    <div className="flex items-center gap-4 flex-1">
-                                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-gray-400">{seqIndex + 1}</div>
-                                        <input value={sequence.title} onChange={(e) => handleUpdateSceneTitle(sequence.id, e.target.value)} className="text-xl font-bold text-slate-200 bg-transparent border-none focus:outline-none focus:ring-0 flex-1 placeholder-gray-600" placeholder="Scene Title" />
+                            return (
+                                <div key={sequence.id} id={sequence.id} className="group/scene">
+                                    <div className="flex items-center justify-between mb-4 border-b border-gray-800 pb-2">
+                                        <div className="flex items-center gap-4 flex-1">
+                                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-gray-400">{seqIndex + 1}</div>
+                                            <input value={sequence.title} onChange={(e) => handleUpdateSceneTitle(sequence.id, e.target.value)} className="text-xl font-bold text-slate-200 bg-transparent border-none focus:outline-none focus:ring-0 flex-1 placeholder-gray-600" placeholder="Scene Title" />
+                                        </div>
+                                        <button onClick={() => handleDeleteScene(sequence.id)} className="text-gray-500 hover:text-red-400 p-2 rounded hover:bg-slate-800 opacity-0 group-hover/scene:opacity-100 transition-opacity" title="Delete Scene"><Trash2 size={18} /></button>
                                     </div>
-                                    <button onClick={() => handleDeleteScene(sequence.id)} className="text-gray-500 hover:text-red-400 p-2 rounded hover:bg-slate-800 opacity-0 group-hover/scene:opacity-100 transition-opacity" title="Delete Scene"><Trash2 size={18} /></button>
+
+                                    <SortableContext items={sequence.frames.map(f => f.id)} strategy={rectSortingStrategy}>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                            {sequence.frames.map((frame, index) => (
+                                                <MovieCard 
+                                                    key={frame.id}
+                                                    id={frame.id}
+                                                    index={currentGlobalIndex + index}
+                                                    script={frame.script}
+                                                    sound={frame.sound}
+                                                    imageUrl={frame.imageUrl}
+                                                    videoUrl={frame.videoUrl}
+                                                    audioUrl={frame.audioUrl}
+                                                    aspectRatio={project.aspectRatio}
+                                                    shotType={frame.shotType}
+                                                    cameraMove={frame.cameraMove}
+                                                    drawingData={frame.drawingData}
+                                                    onUpdate={(field, val) => handleUpdateFrame(frame.id, field, val)}
+                                                    onDelete={() => handleDeleteFrame(frame.id)}
+                                                />
+                                            ))}
+                                            <button onClick={() => handleAddFrame(sequence.id)} className="flex flex-col items-center justify-center h-full min-h-[300px] rounded-xl border-2 border-dashed border-gray-800 bg-slate-900/30 hover:bg-slate-900 hover:border-indigo-500/50 transition-all duration-300 group/add">
+                                                <div className="w-12 h-12 rounded-full bg-slate-800 group-hover/add:bg-indigo-600/20 group-hover/add:text-indigo-400 flex items-center justify-center mb-4 transition-colors"><Plus className="w-6 h-6 text-gray-400 group-hover/add:text-indigo-400" /></div>
+                                                <span className="font-medium text-gray-400 group-hover/add:text-indigo-300">Add Frame</span>
+                                            </button>
+                                        </div>
+                                    </SortableContext>
                                 </div>
+                            );
+                        })}
+                    </div>
 
-                                <SortableContext items={sequence.frames.map(f => f.id)} strategy={rectSortingStrategy}>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                        {sequence.frames.map((frame, index) => (
-                                            <MovieCard 
-                                                key={frame.id}
-                                                id={frame.id}
-                                                index={currentGlobalIndex + index}
-                                                script={frame.script}
-                                                sound={frame.sound}
-                                                imageUrl={frame.imageUrl}
-                                                videoUrl={frame.videoUrl}
-                                                audioUrl={frame.audioUrl}
-                                                aspectRatio={project.aspectRatio}
-                                                shotType={frame.shotType}
-                                                cameraMove={frame.cameraMove}
-                                                drawingData={frame.drawingData}
-                                                onUpdate={(field, val) => handleUpdateFrame(frame.id, field, val)}
-                                                onDelete={() => handleDeleteFrame(frame.id)}
-                                            />
-                                        ))}
-                                        <button onClick={() => handleAddFrame(sequence.id)} className="flex flex-col items-center justify-center h-full min-h-[300px] rounded-xl border-2 border-dashed border-gray-800 bg-slate-900/30 hover:bg-slate-900 hover:border-indigo-500/50 transition-all duration-300 group/add">
-                                            <div className="w-12 h-12 rounded-full bg-slate-800 group-hover/add:bg-indigo-600/20 group-hover/add:text-indigo-400 flex items-center justify-center mb-4 transition-colors"><Plus className="w-6 h-6 text-gray-400 group-hover/add:text-indigo-400" /></div>
-                                            <span className="font-medium text-gray-400 group-hover/add:text-indigo-300">Add Frame</span>
-                                        </button>
-                                    </div>
-                                </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimation}>
+                        {activeId && activeFrame ? (
+                            <div className="opacity-80 rotate-2 scale-105 cursor-grabbing">
+                                 <MovieCard 
+                                    id={activeFrame.id}
+                                    index={0} // Index doesn't matter for overlay
+                                    script={activeFrame.script}
+                                    sound={activeFrame.sound}
+                                    imageUrl={activeFrame.imageUrl}
+                                    videoUrl={activeFrame.videoUrl}
+                                    audioUrl={activeFrame.audioUrl}
+                                    aspectRatio={project.aspectRatio}
+                                    shotType={activeFrame.shotType}
+                                    cameraMove={activeFrame.cameraMove}
+                                    drawingData={activeFrame.drawingData}
+                                    onUpdate={() => {}}
+                                    onDelete={() => {}}
+                                    readOnly={true}
+                                />
                             </div>
-                        );
-                    })}
+                        ) : null}
+                    </DragOverlay>
+                </DndContext>
+
+                <div className="mt-16 flex justify-center border-t border-gray-800 pt-10">
+                    <button onClick={handleAddScene} className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full font-semibold transition-all shadow-lg hover:shadow-xl border border-slate-700">
+                        <Plus size={20} />
+                        Add New Scene
+                    </button>
                 </div>
 
-                <DragOverlay dropAnimation={dropAnimation}>
-                    {activeId && activeFrame ? (
-                        <div className="opacity-80 rotate-2 scale-105 cursor-grabbing">
-                             <MovieCard 
-                                id={activeFrame.id}
-                                index={0} // Index doesn't matter for overlay
-                                script={activeFrame.script}
-                                sound={activeFrame.sound}
-                                imageUrl={activeFrame.imageUrl}
-                                videoUrl={activeFrame.videoUrl}
-                                audioUrl={activeFrame.audioUrl}
-                                aspectRatio={project.aspectRatio}
-                                shotType={activeFrame.shotType}
-                                cameraMove={activeFrame.cameraMove}
-                                drawingData={activeFrame.drawingData}
-                                onUpdate={() => {}}
-                                onDelete={() => {}}
-                                readOnly={true}
-                            />
-                        </div>
-                    ) : null}
-                </DragOverlay>
-            </DndContext>
-
-            <div className="mt-16 flex justify-center border-t border-gray-800 pt-10">
-                <button onClick={handleAddScene} className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full font-semibold transition-all shadow-lg hover:shadow-xl border border-slate-700">
-                    <Plus size={20} />
-                    Add New Scene
-                </button>
-            </div>
-
-          </div>
-         </main>
+              </div>
+             </main>
+         </div>
       </div>
     </>
   );

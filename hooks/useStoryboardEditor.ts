@@ -42,7 +42,18 @@ export const useStoryboardEditor = () => {
           {
             id: 'seq_1',
             title: 'Scene 1',
-            frames: []
+            frames: [
+              {
+                id: 'frame_1',
+                description: 'This is your first frame!',
+                image: '',
+                duration: 3,
+                cameraAngle: 'eye-level',
+                cameraMovement: 'static',
+                sound: 'none',
+                dialogue: '',
+              }
+            ]
           }
         ], // Initialize with one empty sequence
         createdAt: serverTimestamp(),
